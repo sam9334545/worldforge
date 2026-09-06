@@ -1,6 +1,5 @@
-@"
 node_modules/
 dist/
 .env
 .env.local
-"@ | Out-File -Encoding utf8 .gitignore
+.system_generated/

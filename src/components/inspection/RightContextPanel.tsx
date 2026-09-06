@@ -28,17 +28,21 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
   return (
     <aside style={{
       position: 'fixed',
-      top: '56px',
-      right: 0,
-      bottom: 0,
+      top: '64px',
+      right: '16px',
+      bottom: '80px',
       width: '360px',
-      backgroundColor: 'var(--surface-base)',
-      borderLeft: '1px solid var(--border-subtle)',
+      backgroundColor: 'rgba(10, 14, 22, 0.88)',
+      backdropFilter: 'blur(20px)',
+      borderRadius: 'var(--radius-xl)',
+      border: '1px solid var(--border-subtle)',
       display: 'flex',
       flexDirection: 'column',
       zIndex: 35,
-      boxShadow: 'var(--modal-shadow)',
-      userSelect: 'none'
+      boxShadow: '0 16px 48px rgba(0, 0, 0, 0.6)',
+      overflow: 'hidden',
+      userSelect: 'none',
+      animation: 'slideInRight 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
     }}>
       {/* Tab Navigation */}
       <div style={{

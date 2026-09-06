@@ -43,6 +43,10 @@ export function App() {
   const [showAIComparison, setShowAIComparison] = useState<boolean>(false);
   const [activeCausalTrace, setActiveCausalTrace] = useState<CausalTrace | null>(null);
 
+  // Camera focus & Construction pulse states
+  const [focusCoord, setFocusCoord] = useState<{ x: number; y: number } | null>(null);
+  const [constructionPulse, setConstructionPulse] = useState<{ x: number; y: number; time: number } | null>(null);
+
   // Verification check
   const verification = useMemo(() => runPhase1Verification(), []);
 
@@ -115,6 +119,9 @@ export function App() {
           description: stepResult.validationResult.reason || 'Placement violates specification rules.',
           location: { x: cell.x, y: cell.y },
         });
+      } else {
+        // Trigger 300ms visual construction shockwave!
+        setConstructionPulse({ x: cell.x, y: cell.y, time: performance.now() });
       }
     } else if (selectedTool.kind === 'overlay') {
       const stepResult = engineRef.current.step({
@@ -126,6 +133,7 @@ export function App() {
 
       setWorldState({ ...stepResult.state });
       setSelectedCell(stepResult.state.grid[cell.y][cell.x]);
+      setConstructionPulse({ x: cell.x, y: cell.y, time: performance.now() });
     }
   };
 
@@ -159,6 +167,7 @@ export function App() {
     worldState.globalEnv.ambientTemperature += 4.2;
     worldState.events.unshift(perturbEvent);
     setActiveEvent(perturbEvent);
+    setFocusCoord({ x: 6, y: 4 });
 
     // Step simulation to propagate consequence through equations
     const result = engineRef.current.step();
@@ -174,6 +183,7 @@ export function App() {
     if (event.location) {
       const cell = worldState.grid[event.location.y][event.location.x];
       setSelectedCell(cell);
+      setFocusCoord({ x: event.location.x, y: event.location.y });
     }
     if (event.type === 'THERMAL_ANOMALY') {
       setActiveCausalTrace(CausalTracer.traceThermalSurgeToHydro(worldState));
@@ -200,19 +210,18 @@ export function App() {
   // Focus cell from causal trace step
   const handleFocusCausalCell = (pos: { x: number; y: number }) => {
     setSelectedCell(worldState.grid[pos.y][pos.x]);
+    setFocusCoord({ x: pos.x, y: pos.y });
   };
 
   return (
     <div style={{
-      display: 'flex',
-      flexDirection: 'column',
       width: '100vw',
       height: '100vh',
       backgroundColor: 'var(--bg-abyss)',
       overflow: 'hidden',
       position: 'relative'
     }}>
-      {/* 1. TOP HUD */}
+      {/* 1. TOP HUD (Floating 44px Bar) */}
       <TopHUD
         worldState={worldState}
         activeEvent={activeEvent}
@@ -222,21 +231,19 @@ export function App() {
         isAIComparisonOpen={showAIComparison}
       />
 
-      {/* 2. EVENT FEED (Top-Right RimWorld-style) */}
+      {/* 2. EVENT FEED (Top-Right Floating RimWorld-style Cards) */}
       <EventFeed
         events={worldState.events}
         onSelectEvent={handleSelectEvent}
       />
 
-      {/* 3. MAIN VIEWPORT (70% Target Reserve) */}
+      {/* 3. MAIN VIEWPORT (Occupies 100% full screen under floating HUD) */}
       <main style={{
-        flex: 1,
-        display: 'flex',
-        position: 'relative',
-        marginTop: '56px',
+        position: 'absolute',
+        inset: 0,
         overflow: 'hidden'
       }}>
-        {/* Multi-spectral X-Ray Layer Controls */}
+        {/* Multi-spectral X-Ray Layer Controls (Compact Floating Pill) */}
         <XRayControls
           activeLayer={activeXRayLayer}
           onSelectLayer={handleSelectXRayLayer}
@@ -247,7 +254,7 @@ export function App() {
           <AIComparisonCard onClose={() => setShowAIComparison(false)} />
         )}
 
-        <div style={{ flex: 1, height: '100%', position: 'relative' }}>
+        <div style={{ width: '100%', height: '100%', position: 'relative' }}>
           <WorldCanvas
             worldState={worldState}
             selectedCell={selectedCell ? { x: selectedCell.x, y: selectedCell.y } : null}
@@ -257,6 +264,8 @@ export function App() {
             buildTool={mode === 'build' ? selectedTool : null}
             onBuild={handleBuild}
             activeXRayLayer={activeXRayLayer}
+            focusCoord={focusCoord}
+            constructionPulse={constructionPulse}
           />
         </div>
 
@@ -269,7 +278,7 @@ export function App() {
           />
         )}
 
-        {/* 4. RIGHT CONTEXT PANEL (Collapsible) */}
+        {/* 4. RIGHT CONTEXT PANEL (Floating Slide-Over Glass Drawer) */}
         {selectedCell && (
           <RightContextPanel
             selectedCell={selectedCell}

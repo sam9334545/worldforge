@@ -27,17 +27,18 @@ export const CausalInspector: React.FC<CausalInspectorProps> = ({
       bottom: '80px',
       right: '16px',
       width: '360px',
-      backgroundColor: 'var(--surface-base)',
-      backdropFilter: 'blur(16px)',
+      backgroundColor: 'rgba(10, 14, 22, 0.92)',
+      backdropFilter: 'blur(24px)',
       borderRadius: 'var(--radius-xl)',
       border: '1px solid var(--border-active)',
-      boxShadow: 'var(--modal-shadow)',
+      boxShadow: '0 16px 48px rgba(0, 0, 0, 0.65)',
       padding: '16px',
       display: 'flex',
       flexDirection: 'column',
-      gap: '12px',
+      gap: '10px',
       zIndex: 38,
-      userSelect: 'none'
+      userSelect: 'none',
+      animation: 'slideInRight 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
     }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -47,7 +48,7 @@ export const CausalInspector: React.FC<CausalInspectorProps> = ({
           </span>
           <div>
             <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
-              Causal Root Trace
+              Causal Root Trace • Why Did This Happen?
             </span>
             <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', lineHeight: '18px' }}>
               {trace.title}
@@ -62,7 +63,37 @@ export const CausalInspector: React.FC<CausalInspectorProps> = ({
         </button>
       </div>
 
-      <p style={{ fontSize: '11px', color: 'var(--text-variant)', lineHeight: '16px', margin: 0 }}>
+      {/* Breadcrumb Context Chain */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        overflowX: 'auto',
+        padding: '4px 6px',
+        backgroundColor: 'rgba(0,0,0,0.35)',
+        borderRadius: 'var(--radius-xs)',
+        fontSize: '9.5px',
+        color: 'var(--text-muted)'
+      }}>
+        {trace.steps.map((s, idx) => (
+          <React.Fragment key={s.stepIndex}>
+            <span
+              onClick={() => handleStepClick(s)}
+              style={{
+                cursor: 'pointer',
+                color: activeStepIndex === s.stepIndex ? 'var(--primary-bright)' : 'var(--text-variant)',
+                fontWeight: activeStepIndex === s.stepIndex ? 700 : 500,
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Step {s.stepIndex}
+            </span>
+            {idx < trace.steps.length - 1 && <span style={{ color: 'var(--border-subtle)' }}>&rarr;</span>}
+          </React.Fragment>
+        ))}
+      </div>
+
+      <p style={{ fontSize: '11px', color: 'var(--text-variant)', lineHeight: '15px', margin: 0 }}>
         {trace.summary}
       </p>
 
