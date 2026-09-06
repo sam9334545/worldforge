@@ -496,12 +496,14 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         isNight = true;
       }
 
-      // Check for thunderstorm lightning
-      const isStorming = (worldState.events.length > 0 && worldState.events[0].type === 'THERMAL_ANOMALY') ||
-        interpWindSpeed.current > 16 ||
-        visualTheme.weatherProfile.stormProbability > 0.15;
+      // Check for thunderstorm lightning (Derived STRICTLY from real simulation state)
+      const hasSimStorm = (worldState.events.length > 0 && 
+        worldState.events.some(e => e.type === 'EXTREME_WIND' || e.type === 'HEAVY_RAINFALL' || e.severity === 'critical'));
+      const isSevereWind = interpWindSpeed.current > 18 && worldState.clouds.length > 0;
+      const isStorming = hasSimStorm || isSevereWind;
+      const dramaFactor = visualTheme.weatherVisualStyle?.atmosphericDrama ?? 0.5;
 
-      if (isStorming && Math.random() < 0.003 && timestamp - lightningTime.current > 2000) {
+      if (isStorming && Math.random() < (0.003 * dramaFactor) && timestamp - lightningTime.current > 2000) {
         lightningTime.current = timestamp;
         audioSystem.playThunderSound();
       }
@@ -1313,19 +1315,34 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       ctx.restore();
 
       // ----------------------------------------------------
-      // LIVING RAINFALL ANIMATION
+      // LIVING PRECIPITATION ANIMATION (Strictly from Simulation State)
       // ----------------------------------------------------
-      const isRaining = worldState.clouds.length > 0 ||
-        activeXRayLayer === 'hydro' ||
-        visualTheme.weatherProfile.rainfallProbability > 0.2 ||
-        worldState.globalEnv.ambientHumidity > 0.55;
+      const hasClouds = worldState.clouds && worldState.clouds.length > 0;
+      const cloudPrecipPotential = hasClouds 
+        ? Math.max(...worldState.clouds.map(c => c.precipitationPotential || 0))
+        : 0;
+      const isFreezing = interpTemp.current < 2;
 
-      if (isRaining && interpTemp.current >= 2) {
+      // Real precipitation occurs ONLY if simulation clouds have precipitation potential
+      // or high ambient humidity with cloud cover triggers condensation.
+      const hasSimPrecipitation = cloudPrecipPotential > 0.25 || 
+        (hasClouds && worldState.globalEnv.ambientHumidity > 0.65);
+
+      const isRaining = hasSimPrecipitation && !isFreezing;
+      const isSnowing = hasSimPrecipitation && isFreezing;
+      const densityMultiplier = visualTheme.weatherVisualStyle?.precipitationParticleDensity ?? 1.0;
+
+      // ----------------------------------------------------
+      // RAINFALL ANIMATION (Physical rain only)
+      // ----------------------------------------------------
+      if (isRaining) {
         ctx.save();
-        ctx.strokeStyle = 'rgba(175, 215, 255, 0.45)';
+        ctx.strokeStyle = `rgba(175, 215, 255, ${0.45 * Math.min(1.4, densityMultiplier)})`;
         ctx.lineWidth = 1.2;
         const rainDriftX = Math.cos(windRad) * (windSpeed * 0.15);
-        for (const r of rainParticles.current) {
+        const maxRain = Math.floor(rainParticles.current.length * Math.min(1.5, densityMultiplier));
+        for (let i = 0; i < maxRain; i++) {
+          const r = rainParticles.current[i];
           r.y += r.speed;
           r.x += rainDriftX;
           if (r.y > 500) {
@@ -1344,12 +1361,14 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       }
 
       // ----------------------------------------------------
-      // LIVING SNOWFALL ANIMATION
+      // SNOWFALL ANIMATION (Physical freezing precipitation only)
       // ----------------------------------------------------
-      if (interpTemp.current < 2 || visualTheme.terrainStyle === 'frozen_alpine') {
+      if (isSnowing) {
         ctx.save();
-        ctx.fillStyle = 'rgba(245, 250, 255, 0.7)';
-        for (const s of snowParticles.current) {
+        ctx.fillStyle = `rgba(245, 250, 255, ${0.7 * Math.min(1.3, densityMultiplier)})`;
+        const maxSnow = Math.floor(snowParticles.current.length * Math.min(1.5, densityMultiplier));
+        for (let i = 0; i < maxSnow; i++) {
+          const s = snowParticles.current[i];
           s.y += s.speed;
           s.sway += 0.03;
           s.x += Math.sin(s.sway) * 0.8 + Math.cos(windRad) * (windSpeed * 0.08);
