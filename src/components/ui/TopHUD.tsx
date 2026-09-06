@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { WorldState } from '../../sim/contracts/WorldState.ts';
 import type { SimulationEvent } from '../../sim/contracts/SimulationEvent.ts';
+import { audioSystem } from '../../utils/audioSystem.ts';
 
 interface TopHUDProps {
   worldState: WorldState;
@@ -24,6 +25,12 @@ export const TopHUD: React.FC<TopHUDProps> = ({
   activeLevelNumber
 }) => {
   const { time, globalEnv, seed } = worldState;
+  const [soundMuted, setSoundMuted] = useState<boolean>(() => audioSystem.getIsMuted());
+
+  const handleToggleSound = () => {
+    const next = audioSystem.toggleMute();
+    setSoundMuted(next);
+  };
 
   // Compute total hydrology flow across water cells
   let totalFlowQ = 0;
@@ -177,7 +184,7 @@ export const TopHUD: React.FC<TopHUDProps> = ({
               textTransform: 'uppercase',
               letterSpacing: '0.06em'
             }}>
-              System B
+              BDH Model
             </span>
             <span style={{
               width: '8px',
@@ -187,7 +194,7 @@ export const TopHUD: React.FC<TopHUDProps> = ({
               boxShadow: '0 0 8px var(--secondary)'
             }} />
           </div>
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Causal Graph v1</span>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>World-Model Eval</span>
         </div>
 
         {/* Campaign Map Button */}
@@ -222,13 +229,13 @@ export const TopHUD: React.FC<TopHUDProps> = ({
             style={{
               padding: '3px 8px',
               backgroundColor: seed === 42 ? 'var(--primary-container)' : 'var(--surface-elevated)',
-              color: 'var(--text-primary)',
+              color: seed === 42 ? 'var(--on-primary-container)' : 'var(--text-primary)',
               borderRadius: 'var(--radius-xs)',
               fontSize: '10px',
-              fontWeight: 600,
-              border: '1px solid var(--border-subtle)'
+              fontWeight: 700,
+              border: seed === 42 ? '1px solid var(--border-active)' : '1px solid var(--border-subtle)'
             }}
-            title="Load Section 39 Walkthrough Map"
+            title="Load Section 39 Walkthrough Map (Seed 42)"
           >
             Seed 42
           </button>
@@ -237,16 +244,41 @@ export const TopHUD: React.FC<TopHUDProps> = ({
             style={{
               padding: '3px 8px',
               backgroundColor: seed === 101 ? 'var(--primary-container)' : 'var(--surface-elevated)',
-              color: 'var(--text-primary)',
+              color: seed === 101 ? 'var(--on-primary-container)' : 'var(--text-primary)',
               borderRadius: 'var(--radius-xs)',
               fontSize: '10px',
-              fontWeight: 600,
-              border: '1px solid var(--border-subtle)'
+              fontWeight: 700,
+              border: seed === 101 ? '1px solid var(--border-active)' : '1px solid var(--border-subtle)'
             }}
+            title="Load Level 1 Campaign Map (Seed 101)"
           >
             Seed 101
           </button>
         </div>
+
+        {/* Audio Mute/Unmute Toggle (Section 11) */}
+        <button
+          onClick={handleToggleSound}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '3px 8px',
+            backgroundColor: soundMuted ? 'var(--surface-elevated)' : 'rgba(56, 139, 253, 0.25)',
+            color: soundMuted ? 'var(--text-muted)' : 'var(--primary-bright)',
+            borderRadius: 'var(--radius-xs)',
+            fontSize: '10px',
+            fontWeight: 600,
+            border: `1px solid ${soundMuted ? 'var(--border-subtle)' : 'rgba(56, 139, 253, 0.5)'}`,
+            cursor: 'pointer'
+          }}
+          title={soundMuted ? 'Sound: OFF (Click to Enable Ambient Audio)' : 'Sound: ON (Click to Mute Audio)'}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+            {soundMuted ? 'volume_off' : 'volume_up'}
+          </span>
+          <span>{soundMuted ? 'Sound: OFF' : 'Sound: ON'}</span>
+        </button>
 
         {/* Determinism Status */}
         <div style={{

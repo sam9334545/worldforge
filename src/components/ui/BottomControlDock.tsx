@@ -252,8 +252,25 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
           )}
         </div>
       ) : (
-        /* Playback Controls */
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        /* Playback Controls & Mode Guidance */
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {mode === 'inspect' && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 10px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'rgba(56, 189, 248, 0.12)',
+              border: '1px solid rgba(56, 189, 248, 0.3)',
+              color: 'var(--primary-bright)',
+              fontSize: '11px',
+              fontWeight: 600
+            }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>search</span>
+              <span>Inspect Mode: Click any cell or machine to analyze</span>
+            </div>
+          )}
           {/* Play / Pause */}
           <button
             onClick={onTogglePlay}

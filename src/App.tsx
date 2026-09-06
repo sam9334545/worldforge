@@ -41,10 +41,26 @@ export function App() {
   const [showVictoryModal, setShowVictoryModal] = useState<boolean>(false);
   const [starsEarned, setStarsEarned] = useState<number>(1);
 
-  // Initial world state configured from Level 1
+  // Initial world state configured to Seed 42 by default (Section 39 Walkthrough world)
   const [worldState, setWorldState] = useState<WorldState>(() => {
-    const { worldState: initial, engine } = LevelEngine.buildWorldForLevel(LEVEL_DEFINITIONS[1]);
-    engineRef.current = engine;
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const requestedSeed = params?.get('seed') ? parseInt(params.get('seed')!, 10) : 42;
+
+    if (requestedSeed === 42) {
+      const initial = WorldGenerator.generateWorld({ seed: 42, isWalkthroughPreset: true });
+      engineRef.current = new SimulationEngine(initial);
+      return initial;
+    }
+
+    const matched = Object.values(LEVEL_DEFINITIONS).find(l => l.seed === requestedSeed);
+    if (matched) {
+      const { worldState: initial, engine } = LevelEngine.buildWorldForLevel(matched);
+      engineRef.current = engine;
+      return initial;
+    }
+
+    const initial = WorldGenerator.generateWorld({ seed: requestedSeed, isWalkthroughPreset: false });
+    engineRef.current = new SimulationEngine(initial);
     return initial;
   });
 
@@ -150,8 +166,26 @@ export function App() {
     return LevelObjectives.evaluate(activeLevel, worldState, sustainedTicks);
   }, [activeLevel, worldState, sustainedTicks]);
 
+  // Ensure the URL reflects seed 42 whenever the website opens without a seed query
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.history) {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.has('seed')) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('seed', '42');
+        window.history.replaceState(null, '', url.toString());
+      }
+    }
+  }, []);
+
   // Handle seed regeneration
   const handleSelectSeed = (seed: number) => {
+    if (typeof window !== 'undefined' && window.history) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('seed', seed.toString());
+      window.history.replaceState(null, '', url.toString());
+    }
+
     if (seed === 42) {
       const next = WorldGenerator.generateWorld({ seed: 42, isWalkthroughPreset: true });
       engineRef.current = new SimulationEngine(next);
@@ -172,9 +206,13 @@ export function App() {
     setIsPlaying(false);
   };
 
-  // Reset to current level start
+  // Reset to current level start or seed 42 start
   const handleReset = () => {
-    handleRestartLevel();
+    if (worldState.seed === 42) {
+      handleSelectSeed(42);
+    } else {
+      handleRestartLevel();
+    }
   };
 
   // Build placement handler
@@ -191,7 +229,9 @@ export function App() {
       });
 
       setWorldState({ ...stepResult.state });
-      setSelectedCell(stepResult.state.grid[cell.y][cell.x]);
+      if (mode !== 'build') {
+        setSelectedCell(stepResult.state.grid[cell.y][cell.x]);
+      }
 
       if (stepResult.validationResult && !stepResult.validationResult.valid) {
         setActiveEvent({
@@ -216,7 +256,9 @@ export function App() {
       });
 
       setWorldState({ ...stepResult.state });
-      setSelectedCell(stepResult.state.grid[cell.y][cell.x]);
+      if (mode !== 'build') {
+        setSelectedCell(stepResult.state.grid[cell.y][cell.x]);
+      }
       setConstructionPulse({ x: cell.x, y: cell.y, time: performance.now() });
     }
   };
@@ -239,6 +281,37 @@ export function App() {
       setConstructionPulse({ x: last.x, y: last.y, time: performance.now() });
     }
   }, []);
+
+  // Machine Orientation / Yaw rotation handler (Level 3+ Wind, Level 4+ Solar)
+  const handleRotateMachine = useCallback((cell: CellState, deltaAngle = 45) => {
+    if (!engineRef.current || !cell.machine) return;
+    const currentAngle = cell.machine.orientation ?? 180;
+    const newAngle = ((currentAngle + deltaAngle) % 360 + 360) % 360;
+    const result = engineRef.current.step({
+      type: 'SET_ORIENTATION',
+      x: cell.x,
+      y: cell.y,
+      orientation: newAngle,
+    });
+    setWorldState({ ...result.state });
+    if (selectedCell && selectedCell.x === cell.x && selectedCell.y === cell.y) {
+      setSelectedCell(result.state.grid[cell.y][cell.x]);
+    }
+  }, [selectedCell]);
+
+  // Keyboard shortcut listener: 'R' rotates hovered/selected machine
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'r' || e.key === 'R') {
+        const target = hoveredCell || (selectedCell ? { x: selectedCell.x, y: selectedCell.y } : null);
+        if (target && worldState.grid[target.y]?.[target.x]?.machine) {
+          handleRotateMachine(worldState.grid[target.y][target.x]);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [hoveredCell, selectedCell, worldState.grid, handleRotateMachine]);
 
   // Decommission machine handler
   const handleRemoveMachine = (cell: CellState) => {
@@ -379,6 +452,8 @@ export function App() {
             activeXRayLayer={activeXRayLayer}
             focusCoord={focusCoord}
             constructionPulse={constructionPulse}
+            levelId={currentLevelId}
+            mode={mode}
           />
         </div>
 
@@ -392,13 +467,15 @@ export function App() {
         )}
 
         {/* 4. RIGHT CONTEXT PANEL (Floating Slide-Over Glass Drawer) */}
-        {selectedCell && (
+        {selectedCell && mode !== 'build' && (
           <RightContextPanel
             selectedCell={selectedCell}
             worldState={worldState}
             onClose={() => setSelectedCell(null)}
             onRemoveMachine={handleRemoveMachine}
             onExplainCause={handleExplainCause}
+            onRotateMachine={handleRotateMachine}
+            onSelectXRayLayer={setActiveXRayLayer}
           />
         )}
       </main>

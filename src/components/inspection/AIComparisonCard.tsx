@@ -47,10 +47,10 @@ export const AIComparisonCard: React.FC<AIComparisonCardProps> = ({ onClose }) =
 
       {/* Comparison Bar Streams (Stitch Visual Direction) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '11px' }}>
-        {/* System A */}
+        {/* System A (LLM Baseline) */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-            <span style={{ color: 'var(--text-muted)' }}>System A (Spatial Prior)</span>
+            <span style={{ color: 'var(--text-muted)' }}>LLM Baseline (Spatial Prior)</span>
             <span style={{ color: 'var(--primary-bright)', fontWeight: 700 }} className="tabular-nums">+18.2 min (Lag)</span>
           </div>
           <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--surface-container-highest)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
@@ -58,10 +58,10 @@ export const AIComparisonCard: React.FC<AIComparisonCardProps> = ({ onClose }) =
           </div>
         </div>
 
-        {/* System B */}
+        {/* System B (BDH Model) */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-            <span style={{ color: 'var(--text-muted)' }}>System B (Causal Tree)</span>
+            <span style={{ color: 'var(--text-muted)' }}>BDH Model (Causal World-Model)</span>
             <span style={{ color: 'var(--secondary)', fontWeight: 700 }} className="tabular-nums">+4.1 min (Match)</span>
           </div>
           <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--surface-container-highest)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
@@ -92,11 +92,11 @@ export const AIComparisonCard: React.FC<AIComparisonCardProps> = ({ onClose }) =
         fontSize: '10px'
       }} className="tabular-nums">
         <div>
-          <span style={{ color: 'var(--text-muted)' }}>System A Conf: </span>
+          <span style={{ color: 'var(--text-muted)' }}>LLM Conf: </span>
           <span style={{ color: 'var(--primary-bright)', fontWeight: 600 }}>87.4%</span>
         </div>
         <div>
-          <span style={{ color: 'var(--text-muted)' }}>System B Conf: </span>
+          <span style={{ color: 'var(--text-muted)' }}>BDH Conf: </span>
           <span style={{ color: 'var(--secondary)', fontWeight: 600 }}>92.1%</span>
         </div>
         <div>

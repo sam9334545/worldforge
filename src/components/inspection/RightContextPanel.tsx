@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { CellState } from '../../sim/types.ts';
 import type { WorldState } from '../../sim/contracts/WorldState.ts';
+import type { XRayLayer } from '../viewport/XRayControls.tsx';
 import { CellInspector } from './CellInspector.tsx';
 import { MachineInspector } from './MachineInspector.tsx';
 
@@ -10,6 +11,8 @@ interface RightContextPanelProps {
   onClose: () => void;
   onRemoveMachine: (cell: CellState) => void;
   onExplainCause?: (type: 'thermal' | 'wind') => void;
+  onRotateMachine?: (cell: CellState) => void;
+  onSelectXRayLayer?: (layer: XRayLayer) => void;
 }
 
 export const RightContextPanel: React.FC<RightContextPanelProps> = ({
@@ -17,9 +20,22 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
   worldState,
   onClose,
   onRemoveMachine,
-  onExplainCause
+  onExplainCause,
+  onRotateMachine,
+  onSelectXRayLayer
 }) => {
-  const [activeTab, setActiveTab] = useState<'cell' | 'machine' | 'economy'>('cell');
+  const [activeTab, setActiveTab] = useState<'cell' | 'machine' | 'economy'>(
+    selectedCell?.machine ? 'machine' : 'cell'
+  );
+
+  // Automatically switch tab when selecting a machine or empty cell
+  useEffect(() => {
+    if (selectedCell?.machine) {
+      setActiveTab('machine');
+    } else {
+      setActiveTab('cell');
+    }
+  }, [selectedCell?.x, selectedCell?.y, selectedCell?.machine?.type]);
 
   if (!selectedCell) return null;
 
@@ -113,7 +129,7 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
       {/* Tab Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
         {activeTab === 'cell' && (
-          <CellInspector cell={selectedCell} onClose={onClose} />
+          <CellInspector cell={selectedCell} onClose={onClose} onSelectXRayLayer={onSelectXRayLayer} />
         )}
 
         {activeTab === 'machine' && selectedCell.machine && (
@@ -123,6 +139,8 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
             onRemove={() => onRemoveMachine(selectedCell)}
             onClose={onClose}
             onExplainCause={onExplainCause ? () => onExplainCause(selectedCell.machine?.type === 'WindTurbine' ? 'wind' : 'thermal') : undefined}
+            onRotate={onRotateMachine ? () => onRotateMachine(selectedCell) : undefined}
+            localWindDir={selectedCell.dynamic.windDirection}
           />
         )}
 

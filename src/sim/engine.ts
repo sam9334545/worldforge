@@ -344,22 +344,34 @@ export class SimulationEngine {
       this.state.economy.cash -= config.buildCost;
       this.state.economy.cumulativeCost += config.buildCost;
 
-      // Place machine
-      cell.machine = {
-        id: `machine-${action.machineType}-${Date.now()}`,
-        type: action.machineType,
-        x: action.x,
-        y: action.y,
-        orientation: action.orientation ?? 180,
-        capacity: config.ratedPower,
-        efficiency: config.efficiency,
-        health: 1.0,
-        ageTicks: 0,
-        lifespanTicks: config.lifespanTicks,
-        maintenanceCostPerTick: config.maintenanceCostPerTick,
-        buildCost: config.buildCost,
-        isOperating: true,
-      };
+      // Place machine or cable in distinct layer
+      if (action.machineType === 'Cable') {
+        cell.cable = {
+          id: `cable-${action.x}-${action.y}`,
+          x: action.x,
+          y: action.y,
+          connectedTo: [],
+          capacity: 1000,
+          currentThroughput: 0,
+          lossPerCell: 0.015,
+        };
+      } else {
+        cell.machine = {
+          id: `machine-${action.machineType}-${Date.now()}`,
+          type: action.machineType,
+          x: action.x,
+          y: action.y,
+          orientation: action.orientation ?? 180,
+          capacity: config.ratedPower,
+          efficiency: config.efficiency,
+          health: 1.0,
+          ageTicks: 0,
+          lifespanTicks: config.lifespanTicks,
+          maintenanceCostPerTick: config.maintenanceCostPerTick,
+          buildCost: config.buildCost,
+          isOperating: true,
+        };
+      }
 
       return { valid: true };
     }
@@ -394,24 +406,44 @@ export class SimulationEngine {
         this.state.economy.cash += cell.machine.buildCost * 0.5;
         cell.machine = null;
         cell.derived.powerGenerated = 0;
+      } else if (cell.cable) {
+        this.state.economy.cash += 50; // Refund 50% cable scrap
+        cell.cable = null;
       }
       return { valid: true };
     }
 
+    if (action.type === 'SET_ORIENTATION') {
+      const cell = grid[action.y][action.x];
+      if (cell.machine) {
+        cell.machine.orientation = (action.orientation % 360 + 360) % 360;
+        return { valid: true };
+      }
+      return { valid: false, reason: 'No machine found on cell to orient.' };
+    }
+
     if (action.type === 'PLACE_CABLE') {
+      let costTotal = 0;
       for (const pt of action.path) {
         if (pt.x >= 0 && pt.x < width && pt.y >= 0 && pt.y < height) {
-          grid[pt.y][pt.x].cable = {
-            id: `cable-${pt.x}-${pt.y}`,
-            x: pt.x,
-            y: pt.y,
-            connectedTo: [],
-            capacity: 1000,
-            currentThroughput: 0,
-            lossPerCell: 0.015,
-          };
+          const cell = grid[pt.y][pt.x];
+          const val = PlacementEngine.canPlace('Cable', cell, this.state);
+          if (val.valid && !cell.cable) {
+            costTotal += 100;
+            cell.cable = {
+              id: `cable-${pt.x}-${pt.y}`,
+              x: pt.x,
+              y: pt.y,
+              connectedTo: [],
+              capacity: 1000,
+              currentThroughput: 0,
+              lossPerCell: 0.015,
+            };
+          }
         }
       }
+      this.state.economy.cash -= costTotal;
+      this.state.economy.cumulativeCost += costTotal;
       return { valid: true };
     }
 

@@ -23,7 +23,7 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     seed: 101,
     startingCash: 25000,
     demandKW: 150,
-    allowedTerrain: ['T01', 'T02'], // Grass, Sand only
+    allowedTerrain: ['T01', 'T02', 'T04', 'T05', 'T06'], // Grass, Sand, Stone, Snow/Peak, Water all visually present
     unlockedMachines: ['LandSolar'],
     unlockedOverlays: [],
     unlockedXRayLayers: ['none', 'solar'],
@@ -53,7 +53,7 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     seed: 102,
     startingCash: 35000,
     demandKW: 350,
-    allowedTerrain: ['T01', 'T02', 'T04'], // Grass, Sand, Stone
+    allowedTerrain: ['T01', 'T02', 'T04', 'T05', 'T06'],
     unlockedMachines: ['LandSolar', 'WindTurbine'],
     unlockedOverlays: ['Gravel'],
     unlockedXRayLayers: ['none', 'solar', 'elevation'],
@@ -83,7 +83,7 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     seed: 103,
     startingCash: 45000,
     demandKW: 600,
-    allowedTerrain: ['T01', 'T02', 'T04'],
+    allowedTerrain: ['T01', 'T02', 'T04', 'T05', 'T06'],
     unlockedMachines: ['LandSolar', 'WindTurbine'],
     unlockedOverlays: ['Gravel'],
     unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind'],
@@ -113,7 +113,7 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     seed: 104,
     startingCash: 55000,
     demandKW: 800,
-    allowedTerrain: ['T01', 'T02', 'T04'],
+    allowedTerrain: ['T01', 'T02', 'T04', 'T05', 'T06'],
     unlockedMachines: ['LandSolar', 'WindTurbine'],
     unlockedOverlays: ['Gravel'],
     unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind'],
