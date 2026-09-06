@@ -9,6 +9,8 @@ interface TopHUDProps {
   isDeterministic: boolean;
   onToggleAIComparison?: () => void;
   isAIComparisonOpen?: boolean;
+  onOpenCampaign?: () => void;
+  activeLevelNumber?: number;
 }
 
 export const TopHUD: React.FC<TopHUDProps> = ({
@@ -17,7 +19,9 @@ export const TopHUD: React.FC<TopHUDProps> = ({
   onSelectSeed,
   isDeterministic,
   onToggleAIComparison,
-  isAIComparisonOpen = false
+  isAIComparisonOpen = false,
+  onOpenCampaign,
+  activeLevelNumber
 }) => {
   const { time, globalEnv, seed } = worldState;
 
@@ -185,6 +189,31 @@ export const TopHUD: React.FC<TopHUDProps> = ({
           </div>
           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Causal Graph v1</span>
         </div>
+
+        {/* Campaign Map Button */}
+        {onOpenCampaign && (
+          <button
+            onClick={onOpenCampaign}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '4px 10px',
+              backgroundColor: 'rgba(56, 139, 253, 0.2)',
+              color: 'var(--primary-bright)',
+              borderRadius: 'var(--radius-xs)',
+              fontSize: '11px',
+              fontWeight: 700,
+              border: '1px solid rgba(56, 139, 253, 0.5)',
+              boxShadow: '0 0 10px rgba(56, 139, 253, 0.25)',
+              cursor: 'pointer'
+            }}
+            title="Open Energy Ecosystem Campaign Map (Levels 1–10)"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>map</span>
+            <span>{activeLevelNumber ? `Level ${activeLevelNumber}` : 'Campaign'}</span>
+          </button>
+        )}
 
         {/* Seed Selector buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>

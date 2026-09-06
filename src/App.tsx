@@ -14,16 +14,37 @@ import { CausalInspector } from './components/inspection/CausalInspector.tsx';
 import { AIComparisonCard } from './components/inspection/AIComparisonCard.tsx';
 import { CausalTracer, type CausalTrace } from './sim/causalTracer.ts';
 import { runPhase1Verification } from './sim/verification/phase1Check.ts';
+
+// Level System Imports (Section 21)
+import type { LevelId } from './levels/LevelConfig.ts';
+import { LEVEL_DEFINITIONS } from './levels/LevelDefinitions.ts';
+import { LevelEngine } from './levels/LevelEngine.ts';
+import { LevelObjectives } from './levels/LevelObjectives.ts';
+import { LevelProgress } from './levels/LevelProgress.ts';
+import { ObjectiveHUD } from './components/levels/ObjectiveHUD.tsx';
+import { LevelBriefingModal } from './components/levels/LevelBriefingModal.tsx';
+import { LevelCompleteModal } from './components/levels/LevelCompleteModal.tsx';
+import { LevelCampaignModal } from './components/levels/LevelCampaignModal.tsx';
+
 import './styles/index.css';
 
 export function App() {
   // Master simulation engine instance ref
   const engineRef = useRef<SimulationEngine | null>(null);
 
-  // Initial world state
+  // Campaign Level State (Section 21)
+  const [currentLevelId, setCurrentLevelId] = useState<LevelId>(1);
+  const activeLevel = useMemo(() => LEVEL_DEFINITIONS[currentLevelId], [currentLevelId]);
+  const [sustainedTicks, setSustainedTicks] = useState<number>(0);
+  const [showCampaignModal, setShowCampaignModal] = useState<boolean>(false);
+  const [showBriefingModal, setShowBriefingModal] = useState<boolean>(false);
+  const [showVictoryModal, setShowVictoryModal] = useState<boolean>(false);
+  const [starsEarned, setStarsEarned] = useState<number>(1);
+
+  // Initial world state configured from Level 1
   const [worldState, setWorldState] = useState<WorldState>(() => {
-    const initial = WorldGenerator.generateWorld({ seed: 42, isWalkthroughPreset: true });
-    engineRef.current = new SimulationEngine(initial);
+    const { worldState: initial, engine } = LevelEngine.buildWorldForLevel(LEVEL_DEFINITIONS[1]);
+    engineRef.current = engine;
     return initial;
   });
 
@@ -38,7 +59,7 @@ export function App() {
   const [speed, setSpeed] = useState<number>(1);
   const [activeEvent, setActiveEvent] = useState<SimulationEvent | null>(null);
 
-  // Phase 7 Advanced Analysis state
+  // Advanced Analysis state
   const [activeXRayLayer, setActiveXRayLayer] = useState<XRayLayer>('none');
   const [showAIComparison, setShowAIComparison] = useState<boolean>(false);
   const [activeCausalTrace, setActiveCausalTrace] = useState<CausalTrace | null>(null);
@@ -49,6 +70,37 @@ export function App() {
 
   // Verification check
   const verification = useMemo(() => runPhase1Verification(), []);
+
+  // Level selection handler
+  const handleSelectLevel = useCallback((levelId: LevelId) => {
+    const cfg = LEVEL_DEFINITIONS[levelId];
+    const { worldState: newWorld, engine } = LevelEngine.buildWorldForLevel(cfg);
+    engineRef.current = engine;
+    setCurrentLevelId(levelId);
+    setWorldState(newWorld);
+    setSustainedTicks(0);
+    setSelectedCell(null);
+    setHoveredCell(null);
+    setActiveEvent(null);
+    setIsPlaying(false);
+    setActiveXRayLayer('none');
+    setSelectedTool(null);
+    setShowCampaignModal(false);
+    setShowVictoryModal(false);
+    setShowBriefingModal(true);
+  }, []);
+
+  // Level restart handler
+  const handleRestartLevel = useCallback(() => {
+    handleSelectLevel(currentLevelId);
+  }, [currentLevelId, handleSelectLevel]);
+
+  // Next level handler
+  const handleNextLevel = useCallback(() => {
+    if (currentLevelId < 10) {
+      handleSelectLevel((currentLevelId + 1) as LevelId);
+    }
+  }, [currentLevelId, handleSelectLevel]);
 
   // Step simulation tick
   const handleStepTick = useCallback(() => {
@@ -65,7 +117,23 @@ export function App() {
     if (selectedCell) {
       setSelectedCell(result.state.grid[selectedCell.y][selectedCell.x]);
     }
-  }, [selectedCell]);
+
+    // Evaluate active level objectives
+    setSustainedTicks(prevTicks => {
+      const evalRes = LevelObjectives.evaluate(activeLevel, result.state, prevTicks);
+      if (evalRes.isCompleted && !showVictoryModal) {
+        const outcome = LevelProgress.recordCompletion(
+          currentLevelId,
+          evalRes.currentPowerKW,
+          evalRes.currentProfit
+        );
+        setStarsEarned(outcome.starsEarned);
+        setShowVictoryModal(true);
+        setIsPlaying(false);
+      }
+      return evalRes.sustainedTicks;
+    });
+  }, [selectedCell, activeLevel, currentLevelId, showVictoryModal]);
 
   // Automated playback loop
   useEffect(() => {
@@ -77,23 +145,39 @@ export function App() {
     return () => clearInterval(timer);
   }, [isPlaying, speed, handleStepTick]);
 
+  // Real-time level objective evaluation
+  const levelEvaluation = useMemo(() => {
+    return LevelObjectives.evaluate(activeLevel, worldState, sustainedTicks);
+  }, [activeLevel, worldState, sustainedTicks]);
+
   // Handle seed regeneration
   const handleSelectSeed = (seed: number) => {
-    const next = WorldGenerator.generateWorld({ seed, isWalkthroughPreset: seed === 42 });
-    engineRef.current = new SimulationEngine(next);
-    setWorldState(next);
+    if (seed === 42) {
+      const next = WorldGenerator.generateWorld({ seed: 42, isWalkthroughPreset: true });
+      engineRef.current = new SimulationEngine(next);
+      setWorldState(next);
+    } else {
+      const matched = Object.values(LEVEL_DEFINITIONS).find(l => l.seed === seed);
+      if (matched) {
+        handleSelectLevel(matched.id);
+        return;
+      }
+      const next = WorldGenerator.generateWorld({ seed, isWalkthroughPreset: false });
+      engineRef.current = new SimulationEngine(next);
+      setWorldState(next);
+    }
     setSelectedCell(null);
     setHoveredCell(null);
     setActiveEvent(null);
     setIsPlaying(false);
   };
 
-  // Handle reset to walkthrough initial state
+  // Reset to current level start
   const handleReset = () => {
-    handleSelectSeed(worldState.seed);
+    handleRestartLevel();
   };
 
-  // Build placement handler (UI receives validation from simulation engine)
+  // Build placement handler
   const handleBuild = (cell: CellState) => {
     if (!engineRef.current || !selectedTool) return;
 
@@ -120,7 +204,7 @@ export function App() {
           location: { x: cell.x, y: cell.y },
         });
       } else {
-        // Trigger 300ms visual construction shockwave!
+        // Trigger visual construction shockwave
         setConstructionPulse({ x: cell.x, y: cell.y, time: performance.now() });
       }
     } else if (selectedTool.kind === 'overlay') {
@@ -136,6 +220,25 @@ export function App() {
       setConstructionPulse({ x: cell.x, y: cell.y, time: performance.now() });
     }
   };
+
+  // Cable Route building handler (Section 2.2)
+  const handleBuildCablePath = useCallback((path: Array<{ x: number; y: number }>) => {
+    if (!engineRef.current) return;
+    for (const pt of path) {
+      engineRef.current.step({
+        type: 'PLACE',
+        machineType: 'Cable',
+        x: pt.x,
+        y: pt.y,
+      });
+    }
+    const updated = engineRef.current.getSimulationState();
+    setWorldState({ ...updated });
+    if (path.length > 0) {
+      const last = path[path.length - 1];
+      setConstructionPulse({ x: last.x, y: last.y, time: performance.now() });
+    }
+  }, []);
 
   // Decommission machine handler
   const handleRemoveMachine = (cell: CellState) => {
@@ -153,7 +256,6 @@ export function App() {
   const handlePerturbWeather = () => {
     if (!engineRef.current) return;
 
-    // Inject a Sudden Thermal Shift (+4.2°C) or Storm
     const perturbEvent: SimulationEvent = {
       id: `evt-perturb-${Date.now()}`,
       tick: worldState.time.tick,
@@ -161,26 +263,23 @@ export function App() {
       severity: 'warning',
       title: 'Sudden Thermal Anomaly (+4.2°C)',
       description: 'Isotherm elevates rapidly. Alpine snowmelt runoff surge imminent.',
-      location: { x: 6, y: 4 }, // Mountain peak
+      location: { x: Math.min(worldState.width - 1, 6), y: Math.min(worldState.height - 1, 4) },
     };
 
     worldState.globalEnv.ambientTemperature += 4.2;
     worldState.events.unshift(perturbEvent);
     setActiveEvent(perturbEvent);
-    setFocusCoord({ x: 6, y: 4 });
+    setFocusCoord(perturbEvent.location!);
 
-    // Step simulation to propagate consequence through equations
     const result = engineRef.current.step();
     setWorldState({ ...result.state });
-
-    // Open causal explainability DAG
     setActiveCausalTrace(CausalTracer.traceThermalSurgeToHydro(result.state));
   };
 
   // Focus event on world map
   const handleSelectEvent = (event: SimulationEvent) => {
     setActiveEvent(event);
-    if (event.location) {
+    if (event.location && worldState.grid[event.location.y]?.[event.location.x]) {
       const cell = worldState.grid[event.location.y][event.location.x];
       setSelectedCell(cell);
       setFocusCoord({ x: event.location.x, y: event.location.y });
@@ -190,7 +289,7 @@ export function App() {
     }
   };
 
-  // Explain root cause handler ("Why Did This Happen?")
+  // Explain root cause handler
   const handleExplainCause = (type: 'thermal' | 'wind') => {
     if (type === 'thermal') {
       setActiveCausalTrace(CausalTracer.traceThermalSurgeToHydro(worldState));
@@ -209,8 +308,10 @@ export function App() {
 
   // Focus cell from causal trace step
   const handleFocusCausalCell = (pos: { x: number; y: number }) => {
-    setSelectedCell(worldState.grid[pos.y][pos.x]);
-    setFocusCoord({ x: pos.x, y: pos.y });
+    if (worldState.grid[pos.y]?.[pos.x]) {
+      setSelectedCell(worldState.grid[pos.y][pos.x]);
+      setFocusCoord({ x: pos.x, y: pos.y });
+    }
   };
 
   return (
@@ -229,6 +330,8 @@ export function App() {
         isDeterministic={verification.success}
         onToggleAIComparison={() => setShowAIComparison(s => !s)}
         isAIComparisonOpen={showAIComparison}
+        onOpenCampaign={() => setShowCampaignModal(true)}
+        activeLevelNumber={currentLevelId}
       />
 
       {/* 2. EVENT FEED (Top-Right Floating RimWorld-style Cards) */}
@@ -243,10 +346,19 @@ export function App() {
         inset: 0,
         overflow: 'hidden'
       }}>
-        {/* Multi-spectral X-Ray Layer Controls (Compact Floating Pill) */}
+        {/* Dynamic Objective Progress HUD */}
+        <ObjectiveHUD
+          level={activeLevel}
+          evaluation={levelEvaluation}
+          onOpenCampaign={() => setShowCampaignModal(true)}
+          onRestartLevel={handleRestartLevel}
+        />
+
+        {/* Multi-spectral X-Ray Layer Controls */}
         <XRayControls
           activeLayer={activeXRayLayer}
           onSelectLayer={handleSelectXRayLayer}
+          unlockedLayers={activeLevel.unlockedXRayLayers}
         />
 
         {/* AI Prediction vs Ground Truth Benchmark Card */}
@@ -263,6 +375,7 @@ export function App() {
             setHoveredCell={setHoveredCell}
             buildTool={mode === 'build' ? selectedTool : null}
             onBuild={handleBuild}
+            onBuildCablePath={handleBuildCablePath}
             activeXRayLayer={activeXRayLayer}
             focusCoord={focusCoord}
             constructionPulse={constructionPulse}
@@ -303,7 +416,49 @@ export function App() {
         setSpeed={setSpeed}
         onPerturbWeather={handlePerturbWeather}
         onReset={handleReset}
+        unlockedMachines={activeLevel.unlockedMachines}
+        unlockedOverlays={activeLevel.unlockedOverlays}
       />
+
+      {/* 6. MODALS */}
+      {/* Level Briefing Cinematic Modal */}
+      {showBriefingModal && (
+        <LevelBriefingModal
+          level={activeLevel}
+          onStartSimulation={() => {
+            setShowBriefingModal(false);
+            setIsPlaying(true);
+          }}
+          onOpenCampaign={() => {
+            setShowBriefingModal(false);
+            setShowCampaignModal(true);
+          }}
+        />
+      )}
+
+      {/* Level Victory & Rewards Modal */}
+      {showVictoryModal && (
+        <LevelCompleteModal
+          level={activeLevel}
+          evaluation={levelEvaluation}
+          starsEarned={starsEarned}
+          onNextLevel={handleNextLevel}
+          onReplayLevel={handleRestartLevel}
+          onOpenCampaign={() => {
+            setShowVictoryModal(false);
+            setShowCampaignModal(true);
+          }}
+        />
+      )}
+
+      {/* Visual Campaign Map Modal */}
+      {showCampaignModal && (
+        <LevelCampaignModal
+          currentLevelId={currentLevelId}
+          onSelectLevel={handleSelectLevel}
+          onClose={() => setShowCampaignModal(false)}
+        />
+      )}
 
       {/* Footer System Telemetry */}
       <footer style={{
@@ -322,7 +477,7 @@ export function App() {
         color: 'var(--text-muted)',
         zIndex: 20
       }} className="tabular-nums">
-        <span>TerraForge AI Simulation Kernel v1.0 • Spec Source: energy-ecosystem-spec.md</span>
+        <span>TerraForge AI Simulation Kernel v1.0 • Campaign Sector {currentLevelId.toString().padStart(2, '0')}: {activeLevel.name}</span>
         <span>Deterministic Seed: #{worldState.seed} • State Hash: #{worldState.stateHash} • Update Loop: 21-Step Non-Circular</span>
       </footer>
     </div>

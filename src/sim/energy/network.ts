@@ -29,7 +29,8 @@ export class EnergyNetworkEngine {
     width: number,
     height: number,
     demandZones: DemandZone[],
-    economy: EconomyState
+    economy: EconomyState,
+    requireGridConnection = false
   ): GridSimulationResult {
     const { transmissionLossPerCell } = CONFIGURABLE_PARAMS;
 
@@ -53,6 +54,17 @@ export class EnergyNetworkEngine {
           totalGeneratedKW += gen;
 
           if (gen > 0) {
+            // Level-gated grid connection check (Section 17: Level >= 6 requires unbroken Cable path)
+            const isConnected = !requireGridConnection || this.isConnectedToDemandZone(x, y, grid, width, height, targetDemandZone);
+
+            if (!isConnected) {
+              cell.derived.transmissionLoss = 0;
+              cell.derived.powerDelivered = 0;
+              cell.derived.curtailedPower = gen;
+              totalCurtailedKW += gen;
+              continue;
+            }
+
             // Distance from generator to demand zone
             const dist = Math.abs(x - targetCell.x) + Math.abs(y - targetCell.y);
 
@@ -114,5 +126,71 @@ export class EnergyNetworkEngine {
       revenueEarned: Number(revenue.toFixed(2)),
       maintenanceCostPaid: Number(totalMaintenance.toFixed(2)),
     };
+  }
+
+  /**
+   * Evaluates if a machine at (x, y) is connected to the target demand zone via adjacent cables
+   * Section 17: Level >= 6 unbroken cable requirement
+   */
+  public static isConnectedToDemandZone(
+    x: number,
+    y: number,
+    grid: CellState[][],
+    width: number,
+    height: number,
+    demandZone: DemandZone
+  ): boolean {
+    if (!demandZone || !demandZone.cells || !demandZone.cells.length) return true;
+
+    // Check if directly adjacent to any cell in demand zone
+    for (const dz of demandZone.cells) {
+      if (Math.abs(x - dz.x) + Math.abs(y - dz.y) <= 1) return true;
+    }
+
+    // BFS through cable network
+    const visited = new Set<string>();
+    const queue: Array<{ x: number; y: number }> = [];
+
+    // Starting points: if machine cell has cable or adjacent cells have cable
+    if (grid[y][x].cable) {
+      queue.push({ x, y });
+      visited.add(`${x},${y}`);
+    } else {
+      const dirs = [{ dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }];
+      for (const d of dirs) {
+        const nx = x + d.dx;
+        const ny = y + d.dy;
+        if (nx >= 0 && nx < width && ny >= 0 && ny < height && grid[ny][nx].cable) {
+          queue.push({ x: nx, y: ny });
+          visited.add(`${nx},${ny}`);
+        }
+      }
+    }
+
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+
+      // Check if curr is adjacent to any demand zone cell
+      for (const dz of demandZone.cells) {
+        if (Math.abs(curr.x - dz.x) + Math.abs(curr.y - dz.y) <= 1) {
+          return true;
+        }
+      }
+
+      const dirs = [{ dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }];
+      for (const d of dirs) {
+        const nx = curr.x + d.dx;
+        const ny = curr.y + d.dy;
+        const key = `${nx},${ny}`;
+        if (nx >= 0 && nx < width && ny >= 0 && ny < height && !visited.has(key)) {
+          if (grid[ny][nx].cable) {
+            visited.add(key);
+            queue.push({ x: nx, y: ny });
+          }
+        }
+      }
+    }
+
+    return false;
   }
 }

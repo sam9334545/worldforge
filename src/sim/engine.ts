@@ -21,17 +21,65 @@ import type { SimulationEvent } from './contracts/SimulationEvent.ts';
 import type { SimulationStepResult, ValidationResult } from './contracts/SimulationStepResult.ts';
 import type { AgentObservation } from './contracts/AgentObservation.ts';
 import type { WorldState } from './contracts/WorldState.ts';
+import { WorldGenerator } from './generator.ts';
 
 export class SimulationEngine {
   private state: WorldState;
   private prng: DeterministicPRNG;
+  public requireGridConnection = false;
 
   constructor(initialState: WorldState) {
     this.state = initialState;
     this.prng = new DeterministicPRNG(initialState.seed + initialState.time.tick);
   }
 
+  public setRequireGridConnection(val: boolean): void {
+    this.requireGridConnection = val;
+  }
+
   public getState(): WorldState {
+    return this.state;
+  }
+
+  public getSimulationState(): WorldState {
+    return this.state;
+  }
+
+  public getObservation(): AgentObservation {
+    return this.createObservation();
+  }
+
+  public getAvailableActions(): AgentAction[] {
+    const actions: AgentAction[] = [{ type: 'ADVANCE_TIME', ticks: 1 }];
+    for (let y = 0; y < this.state.height; y++) {
+      for (let x = 0; x < this.state.width; x++) {
+        const cell = this.state.grid[y][x];
+        if (PlacementEngine.canPlace('LandSolar', cell, this.state).valid) {
+          actions.push({ type: 'PLACE', machineType: 'LandSolar', x, y });
+        }
+        if (PlacementEngine.canPlace('WindTurbine', cell, this.state).valid) {
+          actions.push({ type: 'PLACE', machineType: 'WindTurbine', x, y });
+        }
+        if (PlacementEngine.canPlace('HydroTurbine', cell, this.state).valid) {
+          actions.push({ type: 'PLACE', machineType: 'HydroTurbine', x, y });
+        }
+      }
+    }
+    return actions;
+  }
+
+  public executeAction(action: AgentAction): SimulationStepResult {
+    return this.step(action);
+  }
+
+  public stepSimulation(): SimulationStepResult {
+    return this.step();
+  }
+
+  public resetEnvironment(seed?: number): WorldState {
+    const s = seed ?? this.state.seed;
+    this.state = WorldGenerator.generateWorld({ seed: s, isWalkthroughPreset: s === 42 });
+    this.prng = new DeterministicPRNG(s);
     return this.state;
   }
 

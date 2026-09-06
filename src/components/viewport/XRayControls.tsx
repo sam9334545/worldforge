@@ -6,22 +6,27 @@ export type XRayLayer =
   | 'wind'
   | 'solar'
   | 'hydro'
+  | 'water'
+  | 'cloud'
   | 'snow'
   | 'network'
+  | 'energy'
   | 'ai';
 
 interface XRayControlsProps {
   activeLayer: XRayLayer;
   onSelectLayer: (layer: XRayLayer) => void;
+  unlockedLayers?: XRayLayer[];
 }
 
 export const XRayControls: React.FC<XRayControlsProps> = ({
   activeLayer,
-  onSelectLayer
+  onSelectLayer,
+  unlockedLayers
 }) => {
   const [isOpen, setIsOpen] = useState<boolean>(false);
 
-  const layers: Array<{ id: XRayLayer; label: string; icon: string; category: string; color: string }> = [
+  const rawLayers: Array<{ id: XRayLayer; label: string; icon: string; category: string; color: string }> = [
     { id: 'none', label: 'Default View', icon: 'view_in_ar', category: 'General', color: '#afc6ff' },
     { id: 'wind', label: 'Wind Vector Field', icon: 'air', category: 'Environment', color: '#79c0ff' },
     { id: 'solar', label: 'Solar Exposure', icon: 'wb_sunny', category: 'Environment', color: '#ffea79' },
@@ -32,13 +37,21 @@ export const XRayControls: React.FC<XRayControlsProps> = ({
     { id: 'ai', label: 'AI Prediction Mesh', icon: 'grain', category: 'Analysis', color: '#aac7ff' },
   ];
 
+  const layers = rawLayers.filter(l => {
+    if (!unlockedLayers) return true;
+    if (l.id === 'none') return true;
+    return unlockedLayers.includes(l.id) ||
+      (l.id === 'hydro' && (unlockedLayers.includes('water') || unlockedLayers.includes('hydro'))) ||
+      (l.id === 'network' && (unlockedLayers.includes('energy') || unlockedLayers.includes('network')));
+  });
+
   const currentItem = layers.find(l => l.id === activeLayer) || layers[0];
 
   return (
     <div style={{
       position: 'absolute',
-      top: '64px',
-      left: '16px',
+      top: '56px',
+      left: '312px',
       display: 'flex',
       flexDirection: 'column',
       gap: '4px',

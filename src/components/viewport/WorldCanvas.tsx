@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import type { CellState } from '../../sim/types.ts';
 import type { WorldState } from '../../sim/contracts/WorldState.ts';
 import type { SelectedBuildTool } from '../ui/BottomControlDock.tsx';
@@ -13,6 +13,7 @@ interface WorldCanvasProps {
   setHoveredCell: (pos: { x: number; y: number } | null) => void;
   buildTool?: SelectedBuildTool;
   onBuild?: (cell: CellState) => void;
+  onBuildCablePath?: (path: Array<{ x: number; y: number }>) => void;
   activeXRayLayer?: XRayLayer;
   focusCoord?: { x: number; y: number } | null;
   constructionPulse?: { x: number; y: number; time: number } | null;
@@ -20,6 +21,15 @@ interface WorldCanvasProps {
 
 // Wind particle definition for object pooling
 interface WindParticle {
+  x: number;
+  y: number;
+  speed: number;
+  length: number;
+  alpha: number;
+}
+
+// Living Rain particle definition (Section 5.4)
+interface RainParticle {
   x: number;
   y: number;
   speed: number;
@@ -44,6 +54,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   setHoveredCell,
   buildTool,
   onBuild,
+  onBuildCablePath,
   activeXRayLayer = 'none',
   focusCoord,
   constructionPulse
@@ -54,6 +65,10 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const tileWidth = 84;
   const tileHeight = 42;
   const elevationStep = 13; // pixels per elevation level
+
+  // Interactive Conduit / Cable routing state (Section 2.2)
+  const [cablePath, setCablePath] = useState<Array<{ x: number; y: number }>>([]);
+  const isCableDragging = useRef<boolean>(false);
 
   // Smooth Camera State (current interpolated towards target)
   const currentPan = useRef<{ x: number; y: number }>({ x: 0, y: -40 });
@@ -86,6 +101,33 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     }
     windParticles.current = pts;
   }, []);
+
+  // Object-pooled rain particles (Section 5.4: 60 particles)
+  const rainParticles = useRef<RainParticle[]>([]);
+  useEffect(() => {
+    const rPts: RainParticle[] = [];
+    for (let i = 0; i < 60; i++) {
+      rPts.push({
+        x: (Math.random() - 0.5) * 1400,
+        y: (Math.random() - 0.5) * 900,
+        speed: 11 + Math.random() * 7,
+        length: 10 + Math.random() * 10,
+        alpha: 0.35 + Math.random() * 0.35,
+      });
+    }
+    rainParticles.current = rPts;
+  }, []);
+
+  // Escape key cancels cable routing
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && cablePath.length > 0) {
+        setCablePath([]);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cablePath.length]);
 
   // Procedural drifting clouds (5 clouds)
   const clouds = useRef<CloudPuff[]>([
@@ -715,6 +757,83 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       ctx.restore();
 
       // ----------------------------------------------------
+      // PHASE 5.4: LIVING RAINFALL ANIMATION (Section 5.4)
+      // ----------------------------------------------------
+      const isRaining = worldState.clouds.length > 0 ||
+        activeXRayLayer === 'hydro' ||
+        activeXRayLayer === 'cloud' ||
+        worldState.time.season === 'Autumn' ||
+        worldState.globalEnv.ambientHumidity > 0.55;
+
+      if (isRaining) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(175, 215, 255, 0.45)';
+        ctx.lineWidth = 1.2;
+        const rainDriftX = Math.cos(windRad) * (windSpeed * 0.15);
+        for (const r of rainParticles.current) {
+          r.y += r.speed;
+          r.x += rainDriftX;
+          if (r.y > 450) {
+            r.y = -450;
+            r.x = (Math.random() - 0.5) * 1400;
+          }
+          if (r.x > 700) r.x = -700;
+          if (r.x < -700) r.x = 700;
+
+          ctx.beginPath();
+          ctx.moveTo(r.x, r.y);
+          ctx.lineTo(r.x + rainDriftX * 0.4, r.y + r.length);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // ----------------------------------------------------
+      // PHASE 2.2: INTERACTIVE CONDUIT / CABLE ROUTE PREVIEW
+      // ----------------------------------------------------
+      if (cablePath.length > 0) {
+        ctx.save();
+        for (let i = 0; i < cablePath.length; i++) {
+          const ptPos = cablePath[i];
+          const pathCell = grid[ptPos.y]?.[ptPos.x];
+          if (!pathCell) continue;
+          const isoPt = gridToIso(ptPos.x, ptPos.y, pathCell.baseTerrain.elevation);
+          const val = PlacementEngine.canPlace('Cable', pathCell, worldState);
+          const col = val.valid ? 'rgba(0, 229, 255, 0.5)' : 'rgba(248, 81, 73, 0.55)';
+          const strokeCol = val.valid ? '#00e5ff' : '#f85149';
+
+          // Cell diamond highlight
+          ctx.beginPath();
+          ctx.moveTo(isoPt.x, isoPt.y - tileHeight / 2);
+          ctx.lineTo(isoPt.x + tileWidth / 2, isoPt.y);
+          ctx.lineTo(isoPt.x, isoPt.y + tileHeight / 2);
+          ctx.lineTo(isoPt.x - tileWidth / 2, isoPt.y);
+          ctx.closePath();
+          ctx.fillStyle = col;
+          ctx.fill();
+          ctx.strokeStyle = strokeCol;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          // Connect sequential cable segments
+          if (i > 0) {
+            const prevPos = cablePath[i - 1];
+            const prevCell = grid[prevPos.y]?.[prevPos.x];
+            if (prevCell) {
+              const prevIso = gridToIso(prevPos.x, prevPos.y, prevCell.baseTerrain.elevation);
+              ctx.strokeStyle = val.valid ? '#00e5ff' : '#f85149';
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.moveTo(prevIso.x, prevIso.y);
+              ctx.lineTo(isoPt.x, isoPt.y);
+              ctx.stroke();
+            }
+          }
+        }
+        ctx.restore();
+      }
+
+      // ----------------------------------------------------
       // PHASE 5: PULSING GLOWING ENERGY CONDUITS
       // ----------------------------------------------------
       const demandZone = worldState.demandZones[0];
@@ -792,7 +911,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       }
 
       // ----------------------------------------------------
-      // PHASE 8: FACTORIO GHOST PLACEMENT HOVER PREVIEW
+      // PHASE 2.4 & PHASE 8: ENHANCED GHOST PLACEMENT PREVIEW & TELEMETRY
       // ----------------------------------------------------
       if (hoveredCell) {
         const cell = grid[hoveredCell.y]?.[hoveredCell.x];
@@ -821,17 +940,55 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
             ctx.lineWidth = 2.5;
             ctx.stroke();
 
-            // Tooltip pill
-            const tipX = pt.x + 40;
-            const tipY = pt.y - 65;
-            const boxWidth = isValid ? 180 : 250;
-            const boxHeight = isValid ? 48 : 68;
+            // Calculate live telemetry lines per tool
+            const telemetryLines: string[] = [];
+            if (buildTool.kind === 'machine') {
+              if (buildTool.type === 'LandSolar') {
+                telemetryLines.push(`• Exposure: ${Math.round(cell.dynamic.effectiveIrradiance / 10)}% | Clouds: ${Math.round((1 - cell.dynamic.cloudAttenuation) * 100)}%`);
+                telemetryLines.push(`• Stability: ${cell.derived.effectiveStability.toFixed(2)} (Req >= 0.70)`);
+                telemetryLines.push(`• Est Output: ~${Math.round(cell.dynamic.effectiveIrradiance * 0.22)} kW`);
+              } else if (buildTool.type === 'WindTurbine') {
+                let minTurbDist: number | null = null;
+                for (let ty = 0; ty < height; ty++) {
+                  for (let tx = 0; tx < width; tx++) {
+                    if (grid[ty][tx].machine?.type === 'WindTurbine') {
+                      const d = Math.max(Math.abs(tx - cell.x), Math.abs(ty - cell.y));
+                      if (minTurbDist === null || d < minTurbDist) minTurbDist = d;
+                    }
+                  }
+                }
+                const estWindKW = Math.round(Math.min(500, 0.5 * 1.225 * 50 * Math.pow(cell.dynamic.windSpeed, 3) * 0.45 * 0.001));
+                telemetryLines.push(`• Wind: ${cell.dynamic.windSpeed.toFixed(1)} m/s | Bearing: ${Math.round(cell.dynamic.windDirection)}°`);
+                telemetryLines.push(`• Clearance: ${minTurbDist !== null ? `${minTurbDist.toFixed(1)} cells (Req >= 2.0)` : 'Clear'}`);
+                telemetryLines.push(`• Est Output: ~${estWindKW} kW`);
+              } else if (buildTool.type === 'HydroTurbine') {
+                const flowQ = cell.dynamic.flowRateQ || 0;
+                const estHydro = flowQ >= 5 ? Math.round(1000 * 9.81 * flowQ * 4 * 0.85 * 0.001) : 0;
+                telemetryLines.push(`• River Flow Q: ${flowQ.toFixed(1)} m³/s (Req >= 5.0)`);
+                telemetryLines.push(`• Velocity: ${cell.dynamic.velocity?.toFixed(2) ?? '0.00'} m/s`);
+                telemetryLines.push(`• Est Output: ~${estHydro} kW`);
+              } else if (buildTool.type === 'Cable') {
+                telemetryLines.push(`• Substrate: ${cell.baseTerrain.name} | Cost: $100`);
+                telemetryLines.push(`• Drag or click path to connect generators to grid`);
+              }
+            } else {
+              // Overlay / Stabilizer
+              const projectedStab = cell.derived.effectiveStability + (buildTool.type === 'Gravel' ? 0.25 : 0.35);
+              telemetryLines.push(`• Terrain Stability: ${cell.derived.effectiveStability.toFixed(2)} → ${projectedStab.toFixed(2)}`);
+              telemetryLines.push(`• Substrate: ${cell.baseTerrain.name} | Cost: $500`);
+            }
 
-            ctx.fillStyle = 'rgba(13, 17, 23, 0.95)';
+            // Sleek Tooltip card
+            const tipX = pt.x + 36;
+            const tipY = pt.y - 75;
+            const boxWidth = 240;
+            const baseHeight = isValid ? 42 + telemetryLines.length * 15 : 68;
+
+            ctx.fillStyle = 'rgba(10, 14, 22, 0.95)';
             ctx.strokeStyle = ghostStroke;
             ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.roundRect(tipX, tipY, boxWidth, boxHeight, 6);
+            ctx.roundRect(tipX, tipY, boxWidth, baseHeight, 6);
             ctx.fill();
             ctx.stroke();
 
@@ -841,9 +998,11 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
             ctx.fillText(isValid ? `✓ CAN PLACE ${buildTool.type.toUpperCase()}` : `✕ CANNOT PLACE ${buildTool.type.toUpperCase()}`, tipX + 10, tipY + 16);
 
             if (isValid) {
-              ctx.fillStyle = '#f0f6fc';
+              ctx.fillStyle = '#c9d1d9';
               ctx.font = '10px Inter, sans-serif';
-              ctx.fillText(`Click to construct on [${hoveredCell.x}, ${hoveredCell.y}]`, tipX + 10, tipY + 32);
+              for (let l = 0; l < telemetryLines.length; l++) {
+                ctx.fillText(telemetryLines[l], tipX + 10, tipY + 32 + l * 15);
+              }
             } else {
               ctx.fillStyle = '#ffb4ab';
               ctx.font = '9.5px Inter, sans-serif';
@@ -852,14 +1011,14 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
               let line1 = '';
               let line2 = '';
               for (const w of words) {
-                if ((line1 + w).length < 36) {
+                if ((line1 + w).length < 38) {
                   line1 += (line1 ? ' ' : '') + w;
                 } else {
                   line2 += (line2 ? ' ' : '') + w;
                 }
               }
-              ctx.fillText(line1, tipX + 10, tipY + 32);
-              if (line2) ctx.fillText(line2, tipX + 10, tipY + 48);
+              ctx.fillText(line1, tipX + 10, tipY + 34);
+              if (line2) ctx.fillText(line2, tipX + 10, tipY + 50);
             }
           } else {
             // Standard Inspect Hover Reticle
@@ -872,8 +1031,6 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
             ctx.lineTo(pt.x, pt.y + tileHeight / 2 + 2);
             ctx.lineTo(pt.x - tileWidth / 2 - 3, pt.y);
             ctx.closePath();
-            ctx.stroke();
-            ctx.setLineDash([]);
           }
         }
       }
@@ -891,10 +1048,25 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         cancelAnimationFrame(animFrameId.current);
       }
     };
-  }, [grid, width, height, selectedCell, hoveredCell, buildTool, worldState, getBlockShading, gridToIso, activeXRayLayer, constructionPulse, tileWidth, tileHeight, elevationStep]);
+  }, [grid, width, height, selectedCell, hoveredCell, buildTool, worldState, getBlockShading, gridToIso, activeXRayLayer, constructionPulse, tileWidth, tileHeight, elevationStep, cablePath]);
 
-  // Mouse event handlers for smooth panning, zooming, selecting
+  // Mouse event handlers for smooth panning, zooming, selecting, and cable routing
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (buildTool?.type === 'Cable') {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const pos = screenToGrid(e.clientX - rect.left, e.clientY - rect.top);
+      if (pos) {
+        isCableDragging.current = true;
+        setCablePath(prev => {
+          if (prev.length === 0) return [pos];
+          if (prev[prev.length - 1].x === pos.x && prev[prev.length - 1].y === pos.y) return prev;
+          return [...prev, pos];
+        });
+      }
+      return;
+    }
+
     isDragging.current = true;
     dragStart.current = {
       x: e.clientX - targetPan.current.x,
@@ -903,24 +1075,45 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const pos = screenToGrid(e.clientX - rect.left, e.clientY - rect.top);
+    if (pos) setHoveredCell(pos);
+
+    if (buildTool?.type === 'Cable' && isCableDragging.current && pos) {
+      setCablePath(prev => {
+        if (prev.length === 0) return [pos];
+        const last = prev[prev.length - 1];
+        if (last.x === pos.x && last.y === pos.y) return prev;
+        // Connect adjacent steps
+        if (Math.abs(pos.x - last.x) <= 1 && Math.abs(pos.y - last.y) <= 1) {
+          if (!prev.some(p => p.x === pos.x && p.y === pos.y)) {
+            return [...prev, pos];
+          }
+        }
+        return prev;
+      });
+      return;
+    }
+
     if (isDragging.current) {
       targetPan.current = {
         x: e.clientX - dragStart.current.x,
         y: e.clientY - dragStart.current.y
       };
-    } else {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const pos = screenToGrid(e.clientX - rect.left, e.clientY - rect.top);
-      setHoveredCell(pos);
     }
   };
 
   const handleMouseUp = () => {
     isDragging.current = false;
+    isCableDragging.current = false;
   };
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (buildTool?.type === 'Cable') {
+      // Handled via cable route selection
+      return;
+    }
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const pos = screenToGrid(e.clientX - rect.left, e.clientY - rect.top);
@@ -1002,6 +1195,67 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>filter_center_focus</span>
         </button>
       </div>
+
+      {/* Floating Cable Route Action Dock (Section 2.2) */}
+      {cablePath.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          bottom: '82px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'rgba(10, 14, 22, 0.94)',
+          backdropFilter: 'blur(16px)',
+          border: '1px solid #00e5ff',
+          borderRadius: 'var(--radius-xl)',
+          padding: '8px 18px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          boxShadow: '0 0 24px rgba(0, 229, 255, 0.35)',
+          zIndex: 35,
+          userSelect: 'none'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#00e5ff' }}>cable</span>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#00e5ff' }}>
+              Conduit Route: {cablePath.length} Cells (${cablePath.length * 100})
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              if (onBuildCablePath) {
+                onBuildCablePath(cablePath);
+              } else if (onBuild) {
+                cablePath.forEach(pt => onBuild(grid[pt.y][pt.x]));
+              }
+              setCablePath([]);
+            }}
+            style={{
+              padding: '6px 14px',
+              backgroundColor: '#00e5ff',
+              color: '#05070a',
+              fontWeight: 800,
+              fontSize: '11.5px',
+              borderRadius: 'var(--radius-sm)',
+              boxShadow: '0 0 12px rgba(0, 229, 255, 0.5)'
+            }}
+          >
+            Confirm & Lay Conduits
+          </button>
+          <button
+            onClick={() => setCablePath([])}
+            style={{
+              padding: '6px 12px',
+              backgroundColor: 'var(--surface-container-highest)',
+              color: 'var(--text-muted)',
+              fontSize: '11.5px',
+              borderRadius: 'var(--radius-sm)'
+            }}
+          >
+            Clear Route
+          </button>
+        </div>
+      )}
     </div>
   );
 };

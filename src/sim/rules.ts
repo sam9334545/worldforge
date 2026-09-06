@@ -153,21 +153,52 @@ export class PlacementEngine {
       };
     }
 
-    // CHECK 6: Machine Wake / Spacing (Turbine clearance)
+    // CHECK 6: Machine Wake / Spacing (Turbine clearance: Section 15 check #6, RULE-PLACE-006)
     if (machineType === 'WindTurbine') {
-      for (const n of neighbors) {
-        const nx = cell.x + n.dx;
-        const ny = cell.y + n.dy;
-        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-          if (grid[ny][nx].machine?.type === 'WindTurbine') {
-            return {
-              valid: false,
-              failedCheckIndex: 6,
-              firstFailingRule: 'RULE-PLACE-006',
-              reason: `Wind turbine wake interference: adjacent cell [${nx}, ${ny}] already hosts a turbine.`
-            };
+      const requiredClearance = 2.0;
+      for (let cy = 0; cy < height; cy++) {
+        for (let cx = 0; cx < width; cx++) {
+          if (cx === cell.x && cy === cell.y) continue;
+          if (grid[cy][cx].machine?.type === 'WindTurbine') {
+            const dist = Math.hypot(cx - cell.x, cy - cell.y);
+            if (dist < requiredClearance) {
+              return {
+                valid: false,
+                failedCheckIndex: 6,
+                firstFailingRule: 'RULE-PLACE-006',
+                reason: `❌ Cannot Place Wind Turbine: Another turbine is within the required clearance radius (Cell [${cx}, ${cy}] is ${dist.toFixed(1)} cells away, required >= ${requiredClearance.toFixed(1)} cells).`
+              };
+            }
           }
         }
+      }
+    }
+
+    // Cable specific validation
+    if (machineType === 'Cable') {
+      if (cell.cable) {
+        return {
+          valid: false,
+          failedCheckIndex: 0,
+          firstFailingRule: 'RULE-PLACE-000',
+          reason: `Cell [${cell.x}, ${cell.y}] already has a conduit installed.`
+        };
+      }
+      if (cell.baseTerrain.id === 'T06') {
+        return {
+          valid: false,
+          failedCheckIndex: 1,
+          firstFailingRule: 'RULE-PLACE-001',
+          reason: `❌ Cannot lay conduit over open water without reinforcement bridge.`
+        };
+      }
+      if (cell.baseTerrain.id === 'T03' && !cell.overlays.includes('Gravel')) {
+        return {
+          valid: false,
+          failedCheckIndex: 3,
+          firstFailingRule: 'RULE-PLACE-003',
+          reason: `❌ Mud/Clay requires Gravel reinforcement before laying conduit (Matrix G).`
+        };
       }
     }
 
@@ -197,11 +228,17 @@ export class PlacementEngine {
    * Validates overlay placement (RULE-OVERLAY-001, Master Matrix H)
    */
   public static canReinforce(overlayType: OverlayType, cell: CellState): ValidationResult {
-    // Water and Snow cannot be reinforced with Gravel
-    if (cell.baseTerrain.id === 'T05' || cell.baseTerrain.id === 'T06') {
+    // Water and Snow cannot be reinforced with Gravel or Stone
+    if (cell.baseTerrain.id === 'T06') {
       return {
         valid: false,
-        reason: `Cannot place ${overlayType} overlay on ${cell.baseTerrain.name}.`
+        reason: `❌ Cannot Reinforce Water Cell: Liquid surface cannot host solid aggregate overlay.`
+      };
+    }
+    if (cell.baseTerrain.id === 'T05') {
+      return {
+        valid: false,
+        reason: `❌ Cannot Reinforce Snow/Peak: Unconsolidated snow cannot host aggregate reinforcement.`
       };
     }
 
@@ -209,7 +246,7 @@ export class PlacementEngine {
     if (cell.overlays.includes(overlayType)) {
       return {
         valid: false,
-        reason: `Cell already has a ${overlayType} overlay.`
+        reason: `❌ ${overlayType} Already Applied on cell [${cell.x}, ${cell.y}].`
       };
     }
 
@@ -223,7 +260,7 @@ export class PlacementEngine {
       if (!cell.overlays.includes('Gravel') && cell.baseTerrain.id === 'T03') {
         return {
           valid: false,
-          reason: `Stone reinforcement on Mud requires Gravel base overlay first.`
+          reason: `❌ Stone reinforcement on Mud requires Gravel base overlay first (2-tier reinforcement).`
         };
       }
       return { valid: true };
