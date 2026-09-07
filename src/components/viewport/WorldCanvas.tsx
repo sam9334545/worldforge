@@ -9,6 +9,7 @@ import type { XRayLayer } from './XRayControls.tsx';
 import type { LevelId } from '../../levels/LevelConfig.ts';
 import { LEVEL_VISUAL_THEMES } from '../../levels/LevelVisualTheme.ts';
 import { audioSystem } from '../../utils/audioSystem.ts';
+import { getVisualWeatherSnapshot } from '../../sim/environment/weatherAdapter.ts';
 
 interface WorldCanvasProps {
   worldState: WorldState;
@@ -427,6 +428,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       if (!isRunning) return;
 
       animTime.current = timestamp;
+      const visualWeather = getVisualWeatherSnapshot(worldState);
 
       // 1. Smooth Camera Interpolation (lerp current to target)
       currentPan.current.x += (targetPan.current.x - currentPan.current.x) * 0.12;
@@ -498,9 +500,9 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       }
 
       // Check for thunderstorm lightning
-      const isStorming = (worldState.events.length > 0 && worldState.events[0].type === 'THERMAL_ANOMALY') ||
-        interpWindSpeed.current > 16 ||
-        visualTheme.weatherProfile.stormProbability > 0.15;
+      const isStorming = visualWeather.isStormy ||
+        (worldState.events.length > 0 && worldState.events[0].type === 'THERMAL_ANOMALY') ||
+        interpWindSpeed.current > 16;
 
       if (isStorming && Math.random() < 0.003 && timestamp - lightningTime.current > 2000) {
         lightningTime.current = timestamp;
@@ -1372,14 +1374,10 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       // ----------------------------------------------------
       // LIVING RAINFALL ANIMATION
       // ----------------------------------------------------
-      const isRaining = worldState.clouds.length > 0 ||
-        activeXRayLayer === 'hydro' ||
-        visualTheme.weatherProfile.rainfallProbability > 0.2 ||
-        worldState.globalEnv.ambientHumidity > 0.55;
-
-      if (isRaining && interpTemp.current >= 2) {
+      if (visualWeather.isRaining || activeXRayLayer === 'hydro') {
+        const alpha = Math.min(0.7, 0.25 + visualWeather.rainIntensity * 0.35);
         ctx.save();
-        ctx.strokeStyle = 'rgba(175, 215, 255, 0.45)';
+        ctx.strokeStyle = `rgba(175, 215, 255, ${alpha})`;
         ctx.lineWidth = 1.2;
         const rainDriftX = Math.cos(windRad) * (windSpeed * 0.15);
         for (const r of rainParticles.current) {
@@ -1403,9 +1401,10 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       // ----------------------------------------------------
       // LIVING SNOWFALL ANIMATION
       // ----------------------------------------------------
-      if (interpTemp.current < 2 || visualTheme.terrainStyle === 'frozen_alpine') {
+      if (visualWeather.isSnowing) {
+        const snowAlpha = Math.min(0.85, 0.4 + visualWeather.snowIntensity * 0.4);
         ctx.save();
-        ctx.fillStyle = 'rgba(245, 250, 255, 0.7)';
+        ctx.fillStyle = `rgba(245, 250, 255, ${snowAlpha})`;
         for (const s of snowParticles.current) {
           s.y += s.speed;
           s.sway += 0.03;

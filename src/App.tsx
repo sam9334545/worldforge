@@ -96,12 +96,14 @@ export function App() {
   // Camera focus & Construction pulse states
   const [focusCoord, setFocusCoord] = useState<{ x: number; y: number } | null>(null);
   const [constructionPulse, setConstructionPulse] = useState<{ x: number; y: number; time: number } | null>(null);
+  const dismissedEventIds = useRef<Set<string>>(new Set());
 
   // Verification check
   const verification = useMemo(() => runPhase1Verification(), []);
 
   // Level selection handler with previous structure restoration capability (requirement 3)
   const handleSelectLevel = useCallback((levelId: LevelId, restorePrevious = false) => {
+    dismissedEventIds.current.clear();
     // Persist current level's structure snapshot
     if (worldState.grid && currentLevelId) {
       LevelProgress.saveLevelGridSnapshot(currentLevelId, worldState.grid, worldState.economy.cash);
@@ -140,20 +142,23 @@ export function App() {
 
   // Event dismissal handler (requirement 1: dismiss notification with cross button)
   const handleDismissEvent = useCallback((eventId: string) => {
+    dismissedEventIds.current.add(eventId);
+    if (engineRef.current) {
+      engineRef.current.dismissEvent(eventId);
+    }
     setWorldState(prev => ({
       ...prev,
       events: prev.events.filter(e => e.id !== eventId)
     }));
-    if (activeEvent?.id === eventId) {
-      setActiveEvent(null);
-    }
-  }, [activeEvent]);
+    setActiveEvent(prev => (prev?.id === eventId ? null : prev));
+  }, []);
 
   // Helper to clone world state for React state immutability and wallet reactivity
   const cloneState = (s: WorldState): WorldState => {
     const currentCoins = s.player?.coins ?? s.economy.cash;
     return {
       ...s,
+      events: (s.events || []).filter(e => !dismissedEventIds.current.has(e.id)),
       player: s.player ? { ...s.player, coins: currentCoins } : { coins: currentCoins, id: 1 },
       economy: {
         ...s.economy,
@@ -170,9 +175,10 @@ export function App() {
     const result = engineRef.current.step();
     setWorldState(cloneState(result.state));
 
-    // Check for recent critical events
-    if (result.events.length > 0) {
-      setActiveEvent(result.events[0]);
+    // Check for recent critical events that haven't been dismissed
+    const newEvents = (result.events || []).filter(e => !dismissedEventIds.current.has(e.id));
+    if (newEvents.length > 0) {
+      setActiveEvent(newEvents[0]);
     }
 
     // Refresh selected cell if open
@@ -230,6 +236,7 @@ export function App() {
 
   // Handle seed regeneration
   const handleSelectSeed = (seed: number) => {
+    dismissedEventIds.current.clear();
     if (typeof window !== 'undefined' && window.history) {
       const url = new URL(window.location.href);
       url.searchParams.set('seed', seed.toString());
@@ -285,7 +292,7 @@ export function App() {
       if (stepResult.validationResult && !stepResult.validationResult.valid) {
         const errorReason = stepResult.validationResult.errorReason || stepResult.validationResult.reason || 'Placement violates specification rules.';
         audioSystem.playErrorSound();
-        const rejectEvent: SimulationEvent = {
+        const rejectEvent = stepResult.state.events[0] || {
           id: `evt-reject-${Date.now()}`,
           tick: stepResult.state.time.tick,
           type: 'PLACEMENT_REJECTED',
@@ -294,10 +301,7 @@ export function App() {
           description: stepResult.validationResult.reason || errorReason,
           location: { x: cell.x, y: cell.y },
         };
-        setWorldState(prev => ({
-          ...cloneState(stepResult.state),
-          events: [rejectEvent, ...prev.events.filter(e => e.id !== rejectEvent.id)],
-        }));
+        setWorldState(cloneState(stepResult.state));
         setActiveEvent(rejectEvent);
       } else {
         setWorldState(cloneState(stepResult.state));
@@ -320,7 +324,7 @@ export function App() {
       if (stepResult.validationResult && !stepResult.validationResult.valid) {
         const errorReason = stepResult.validationResult.errorReason || stepResult.validationResult.reason || 'Overlay violates rules.';
         audioSystem.playErrorSound();
-        const rejectEvent: SimulationEvent = {
+        const rejectEvent = stepResult.state.events[0] || {
           id: `evt-reject-${Date.now()}`,
           tick: stepResult.state.time.tick,
           type: 'PLACEMENT_REJECTED',
@@ -329,10 +333,7 @@ export function App() {
           description: stepResult.validationResult.reason || errorReason,
           location: { x: cell.x, y: cell.y },
         };
-        setWorldState(prev => ({
-          ...cloneState(stepResult.state),
-          events: [rejectEvent, ...prev.events.filter(e => e.id !== rejectEvent.id)],
-        }));
+        setWorldState(cloneState(stepResult.state));
         setActiveEvent(rejectEvent);
       } else {
         setWorldState(cloneState(stepResult.state));
@@ -491,7 +492,13 @@ export function App() {
         isAIComparisonOpen={showAIComparison}
         onOpenCampaign={() => setShowCampaignModal(true)}
         onOpenRuleBook={() => setShowRuleBook(true)}
-        onDismissActiveEvent={() => setActiveEvent(null)}
+        onDismissActiveEvent={() => {
+          if (activeEvent) {
+            handleDismissEvent(activeEvent.id);
+          } else {
+            setActiveEvent(null);
+          }
+        }}
         activeLevelNumber={currentLevelId}
         isLevelCompleted={isLevelCompleted}
         onRestartLevel={handleRestartLevel}

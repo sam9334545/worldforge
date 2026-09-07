@@ -83,6 +83,18 @@ export class SimulationEngine {
     return this.state;
   }
 
+  public dismissEvent(eventId: string): void {
+    if (this.state.events) {
+      this.state.events = this.state.events.filter(e => e.id !== eventId);
+    }
+  }
+
+  public clearEvents(): void {
+    if (this.state.events) {
+      this.state.events = [];
+    }
+  }
+
   /**
    * Executes a single simulation step following Section 24's exact 21 steps.
    */

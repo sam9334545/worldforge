@@ -1,0 +1,876 @@
+# Grid Energy Ecosystem — Technical Design & Simulation Specification v1.0
+
+**Status:** Design-only. No implementation code included, per project requirement.
+**Labeling convention used throughout:** `[PHYSICS-BASED]`, `[GAME APPROXIMATION]`, `[CONFIGURABLE]`.
+
+---
+
+## SECTION 1 — Game Objective
+
+The player (human or AI agent) is given a procedurally-defined grid terrain. They place energy-generation
+infrastructure (solar, wind, hydro) and connective infrastructure (cable) to generate electricity, deliver it
+to demand zones, and earn revenue, while the simulated environment (sun, wind, clouds, water cycle, seasons)
+evolves over simulated time — up to 10 in-game years. The player wins by building an ecosystem that remains
+economically and energetically viable under changing and eventually unfamiliar conditions.
+
+## SECTION 2 — Research Objective
+
+The game is an evaluation harness for AI world-model formation. It measures whether an agent can:
+spatial-reason over terrain/wind/water geometry; plan construction sequences; remember prior environmental
+outcomes; learn the *causal* rules (not surface correlations like "sand→solar"); predict consequences of
+actions and events; adapt to seasonal/long-horizon change; and transfer learned rules to unfamiliar map
+layouts it has never seen. Section 39/40 define the formal evaluation protocol.
+
+## SECTION 3 — World Model
+
+The world is decomposed into five strictly separated layers (never merged in state or in code):
+
+- **A. Static Terrain Properties** — fixed at map generation (elevation, roughness, permeability, etc.)
+- **B. Dynamic Environmental State** — evolves every tick (wind, cloud, rain, river flow, snowpack, sun position)
+- **C. Player-Placed Objects** — machines and cables, with their own static+dynamic sub-state
+- **D. Derived Physical Values** — computed each tick from A+B+C (effective irradiance, local wind, hydraulic head, outputs)
+- **E. Economic Values** — computed from D (revenue, cost, profit)
+
+No rule may read E to compute D, or D to compute A/B (no backward causation). This ordering is enforced by
+the Update Order in Section 24/31.
+
+## SECTION 4 — Coordinate / Grid System
+
+- Grid: 2D array, coordinates `(x, y)`, origin at top-left, `x` increasing east, `y` increasing south. `[GAME APPROXIMATION]`
+- Cell size: 1 abstract unit (≈ configurable to represent e.g. 100m). `[CONFIGURABLE]`
+- Each cell holds exactly one **base terrain block**, zero-or-more **overlays** (stacked, ordered), and
+  zero-or-one **machine**.
+- Neighbor model: 8-connected (N, S, E, W, NE, NW, SE, SW) for wind/cloud propagation and orographic effects;
+  4-connected (N, S, E, W) for river flow directionality to keep flow routing unambiguous. `[GAME APPROXIMATION]`
+- Global wind direction is a compass bearing (0–359°); "windward"/"leeward" for a cell are computed relative
+  to that bearing and the elevation gradient of its neighbors (Section 8).
+
+## SECTION 5 — Static Terrain Property System
+
+Every block carries this fixed property set (values never change after map generation, only reinforcement
+overlays modify *effective* stability/permeability, tracked separately as derived state):
+
+`elevation`, `roughnessZ0` (m), `moistureCapacity` (0–1), `permeability` (0–1), `stability` (0–1),
+`thermalInertia` (relative, only where relevant), `baseWaterRetention` (0–1), `allowedOverlays[]`,
+`forbiddenOverlays[]`, `allowedMachines[]`, `transformable` (bool), `reinforceable` (bool).
+
+These feed the Wind, Water Cycle, and Placement engines. They never directly set an energy multiplier.
+
+## SECTION 6 — Complete Property Table for All Terrain Blocks
+
+| ID | Name | Elev. | Roughness z0 (m) | Moist. Cap. | Permeability | Stability | Water Retention | Allowed Overlays | Forbidden Overlays | Allowed Machines | Transformable | Reinforceable |
+|----|------|-------|------|------|------|------|------|------|------|------|------|------|
+| T01 | Grass/Dirt | 1 | 0.03 | 0.50 | 0.55 [CONFIGURABLE] | 0.70 [CONFIGURABLE] | 0.45 | Gravel, Sand, Mud | Snow (direct) | Solar, Wind, Cable | Yes | Yes |
+| T02 | Sand | 1 | 0.01 | 0.05 | 0.85 | 0.55 [CONFIGURABLE] | 0.05 | Gravel, Dirt (via irrigation rule) | Mud (direct) | Solar, Cable | Yes | Yes |
+| T03 | Mud/Clay | 0 | 0.05 | 0.95 | 0.10 | 0.30 [CONFIGURABLE] | 0.90 | Gravel, Stone | — | Cable (Solar/Wind only after reinforcement) | Yes | Yes |
+| T04 | Stone/Cobble/Rock | 3 | 0.20 | 0.15 | 0.10 | 0.95 | 0.10 | Gravel, Snow | Mud | Wind, Solar, Cable | No | N/A (already max) |
+| T05 | Snow/Peak | 5 | 0.50 | 0.80 | 0.05 (frozen) | 0.60 [CONFIGURABLE] | 0.80 | — | all others | Wind | Yes (seasonal, to Stone/Grass on melt) | No |
+| T06 | Water/River | 0 (+separate waterLevel) | 0.0002 | 1.0 | N/A | N/A | 1.0 | Floating Solar (conditional) | Land Solar, Wind, Grass, Sand, etc. | Hydro, (Floating Solar conditional) | No | No |
+| T07 | Gravel | 2 | 0.08 | 0.30 | 0.60 | 0.85 | 0.20 | Dirt, Mud | — | Solar, Wind, Cable | No | N/A (acts as reinforcement) |
+
+Full column set (thermal behavior, environmental role, interaction rules) for each block is given narratively
+in Sections 6.1–6.7 below; this table is the master quick-reference (see also Final Master Property Table).
+
+### 6.1 Grass/Dirt
+Baseline terrain, moderate infiltration, moderate roughness. No inherent energy bonus. Neighbors: passes wind
+speed through with roughness-based damping (Section 7). Seasonally: retains moderate moisture in all seasons;
+in winter, moisture below freezing threshold contributes to local snow accumulation eligibility.
+
+### 6.2 Sand
+Low roughness → low wind drag, allows wind to accelerate slightly across it (Section 7, RULE-WIND-002). High
+infiltration → rainfall mostly infiltrates rather than running off (little contribution to river flow). Its
+solar output is *never* set directly — it emerges purely from the Sun Model (Section 6/9) because sand rarely
+casts obstruction shadows (low elevation-neighbor variance) and rarely retains cloud-forming moisture.
+
+### 6.3 Mud/Clay
+Unstable (`stability = 0.30`) because saturated fine-grained soil has low bearing capacity `[PHYSICS-BASED,
+simplified]`. Solar/Wind machines require `stability ≥ 0.7` (Section 15), so Mud needs a Gravel or Stone
+overlay (reinforcement) to raise *effective* stability before those machines are legal. High moisture capacity
+and low permeability mean high evaporation contribution feeding the Cloud system, and high runoff generation
+when saturated (once `moistureCapacity` is exceeded, excess becomes runoff rather than infiltration — RULE-
+WATER-004). Under sustained high rainfall + adjacency to a Water block, Mud can transform into Water
+(RULE-TERRAIN-003) once accumulated surface water exceeds a threshold `[CONFIGURABLE]`.
+
+### 6.4 Stone/Cobblestone/Rock
+High elevation, high roughness. Never given a flat wind multiplier — instead its elevation changes exposure
+to the ambient wind field, and its roughness dampens the *local* wind speed component from friction (these two
+effects partially oppose and the net direction is computed, not asserted; see Section 7 equations). Very
+stable, very low permeability → high runoff contribution, essentially no infiltration.
+
+### 6.5 Snow/Peak
+Highest elevation. Contributes to orographic lifting (Section 8). Only Wind machines are allowed (Solar is
+blocked by permanent low sun-angle incidence + high albedo scattering `[GAME APPROXIMATION]`; Hydro/Cable
+placement is invalid on frozen ground). Snow accumulates from precipitation when local temperature ≤ 0°C
+and melts when local temperature > 0°C, releasing water into runoff/infiltration proportionally (Section 13).
+
+### 6.6 Water/River
+Distinguishes `RIVER` (directional flow, `flowRate Q > 0`), `LAKE` (large stagnant body), and `STAGNANT_WATER`
+(small isolated body, e.g., pond). Only `LAKE` and `STAGNANT_WATER`, or `RIVER` cells below a velocity
+threshold `velocity ≤ V_float_max [CONFIGURABLE]`, permit Floating Solar (RULE-PLACE-006) — fast rivers would
+destroy or de-stabilize a floating platform `[GAME APPROXIMATION]`.
+
+### 6.7 Gravel
+Mid-elevation transition/reinforcement terrain. Its primary role is as an **overlay** that raises the
+effective `stability` and `permeability` of the cell beneath it (RULE-OVERLAY-001), enabling Mud or Sand to
+later host Solar/Wind after being reinforced.
+
+## SECTION 7 — Cloud System
+
+State per cloud entity: `cloudDensity` (0–1), `cloudWaterContent` (kg/m² abstracted), `cloudTemperature`,
+`cloudAltitude`, `movementDirection`, `movementSpeed`, `precipitationPotential`, `cloudLifetime`,
+`coverageRadius`, centered on a grid position (clouds are objects that move across cells, not a per-cell
+scalar field, so that "cloud crossing the map" is a legible, trackable spatial event).
+
+**Formation** `[GAME APPROXIMATION of real convective/orographic cloud physics]`:
+`evaporation(cell) + humidity(cell) ≥ H_condensation_threshold [CONFIGURABLE]` AND
+`(temperature(cell) ≤ dewPointProxy(cell) OR orographicLift(cell) > 0)` → spawn/grow a cloud entity centered
+on that cell with `cloudDensity` proportional to excess humidity above threshold.
+
+**Movement:** cloud position advances each tick by `movementDirection/movementSpeed`, which is derived from
+the ambient wind vector at the cloud's current altitude-adjusted position (higher altitude → less terrain
+drag, more purely wind-driven) `[GAME APPROXIMATION]`.
+
+**Dissipation:** `cloudDensity` decays by a configurable rate per tick, faster over dry, low-humidity, hot
+cells (re-evaporation of cloud droplets), and instantaneously if the cloud has fully precipitated
+(`cloudWaterContent → 0`).
+
+**Precipitation:** each tick, `precipitation = cloudWaterContent × precipitationPotential × f(orographicLift)`,
+where `precipitationPotential` rises with `cloudDensity` and with forced lifting over high terrain
+(Section 8). Precipitated water is removed from `cloudWaterContent` and added to the underlying cell's
+`rainfall` for that tick, feeding the Water Cycle (Section 9).
+
+**Effect on solar:** `cloudAttenuation(cell) = 1 − cloudDensity(overhead cloud) × k_atten [CONFIGURABLE]`,
+multiplied directly into `effectiveSolarIrradiance` (Section 6 solar chain) — never a flat terrain penalty.
+
+## SECTION 8 — Sun / Solar Model
+
+Variables: `timeOfDay`, `dayOfYear`, `season`, `sunAzimuth`, `sunElevation`, `baseSolarIrradiance`,
+`cloudDensity`, `terrainObstruction`, `panelOrientation`, `panelTilt`.
+
+`sunElevation(t) = f(dayOfYear, timeOfDay, latitudeConst)` — a smooth sinusoidal approximation
+`[GAME APPROXIMATION]`: peaks at solar noon, is 0 at sunrise/sunset, amplitude modulated seasonally
+(higher peak in summer, lower in winter, per Section 19 season table).
+
+`baseSolarIrradiance = I_max × max(0, sin(sunElevation))` `[PHYSICS-BASED, simplified Lambertian model]`.
+
+`terrainObstruction(cell)`: 1.0 (no shadow) minus a shadow contribution from any higher-elevation neighbor
+cell lying in the direction of `sunAzimuth` within a shadow-casting range proportional to elevation
+difference `[GAME APPROXIMATION deterministic ray-cast on the elevation grid]`.
+
+`panelIncidenceFactor = cos(angle between sun-vector and panel-normal)`, computed from `panelTilt` /
+`panelOrientation` vs. `sunAzimuth`/`sunElevation` `[PHYSICS-BASED]`.
+
+`effectiveSolarIrradiance = baseSolarIrradiance × terrainObstruction × cloudAttenuation × panelIncidenceFactor`
+
+`solarOutput = effectiveSolarIrradiance × panelArea × panelEfficiency` `[PHYSICS-BASED, simplified]`.
+
+Level 1 uses only `baseSolarIrradiance` with panel flat/fixed (no orientation, no obstruction) to introduce
+the concept gently; obstruction and orientation are introduced at Levels 3–4 (Section 20).
+
+## SECTION 9 — Wind System
+
+`globalWind = (speed, direction)`, set by the weather/season layer, seeded and bounded (Section 29).
+
+`localWind(cell) = globalWind` modified by:
+1. **Roughness damping:** `speedFactor = (z0_ref / z0_cell)^α` — smaller `z0` (Sand) → less damping → wind
+   accelerates slightly; larger `z0` (Stone/Snow) → more damping `[PHYSICS-BASED, simplified log-wind-profile idea]`.
+2. **Elevation exposure:** each +1 elevation over the map-average adds a small speed bonus (more exposed to
+   free-stream wind) `[GAME APPROXIMATION]`.
+3. **Orographic wind-shadow:** if a higher-elevation cell sits upwind within `shadowRange [CONFIGURABLE]`,
+   apply a leeward speed reduction proportional to the elevation difference and inversely to distance
+   (Section 8/RULE-WIND-003).
+4. **Directional deflection near mountains:** wind direction bends slightly around large elevation gradients
+   `[GAME APPROXIMATION, optional — mark CONFIGURABLE for whether Level ≥7 enables this]`.
+
+`localWind(cell)` is a *vector*, always exposed as ground truth (Section 28) even where the agent's
+observation is restricted (Section 21).
+
+## SECTION 10 — Mountain / Orographic System
+
+Chain 1 (wind side): `windward slope → forced ascent → adiabatic cooling → increases local humidity
+saturation → cloud formation bias` (feeds Section 7 formation threshold). `leeward slope → descending,
+warming, drying air → wind shadow (Section 9.3) → suppressed cloud formation ("rain shadow")`
+`[PHYSICS-BASED, simplified orographic-lift model]`.
+
+`orographicLift(cell) = max(0, elevation(cell) − elevation(upwind neighbor)) × windSpeedFactor`. This feeds
+directly into the Cloud formation formula (Section 7) and into `precipitationPotential`.
+
+**Range of influence:** a mountain cell's wind-shadow and lift effects propagate up to `R_orographic`
+cells downwind/upwind `[CONFIGURABLE, default 3–5]`, decaying linearly with distance.
+
+**Combining multiple mountain cells:** effects are additive but capped (`min(1.0, Σ contributions)`) to avoid
+runaway values from long contiguous ranges — a ridge does not produce infinite lift.
+
+**Valleys:** a valley (local elevation minimum flanked by two higher neighbors along the wind axis) receives
+reduced wind speed (channeling only along its axis, damping cross-axis) `[GAME APPROXIMATION]` and is a
+collection point for both runoff (Section 9 water cycle) and — separately — for any accumulated cold air
+(lower temperature, feeding snow/frost logic at low temperatures).
+
+## SECTION 11 — Water Cycle
+
+`evaporation(cell) = baseEvapRate × temperature_factor × (1 − humidity) × surfaceWaterAvailable(cell)`
+`[GAME APPROXIMATION]`. Feeds atmospheric humidity, which feeds Cloud formation (Section 7).
+
+`infiltration(cell) = min(availableWater, permeability(cell) × infiltrationRateConst)`.
+
+`runoff(cell) = availableWater − infiltration(cell) − evaporation(cell)`, routed downhill to the
+lowest-elevation 4-connected neighbor (ties broken deterministically by fixed direction priority N>E>S>W to
+preserve reproducibility) — this is the River Flow Model's water source term (Section 12).
+
+Terrain differentiation (all derived from the static permeability/retention properties in Section 6, never
+hardcoded per-rule again): Sand → high infiltration, low runoff; Mud → low infiltration, high retention until
+saturated then high runoff; Rock → near-zero infiltration, high runoff; Grass → moderate/moderate.
+
+## SECTION 12 — River Flow Model
+
+Each Water cell tracks `waterLevel`, `flowRate Q`, `flowDirection`, `velocity`.
+
+`flowDirection(cell) = argmin(waterLevel of 4-connected neighbor)` (deterministic, tie-broken as above).
+
+`Q(cell) = Q(upstream contributing cells) + runoff(local contributing land cells) − evaporation(cell) −
+infiltration(cell, if applicable to lake beds)`.
+
+Source cells are Water cells with no upstream Water neighbor but receiving land runoff (springs). Tributaries
+merge by summing `Q`. Downstream propagation is one full pass per tick in flow-direction topological order
+(guaranteed acyclic because flow always goes toward lower `waterLevel`, and `waterLevel` is itself derived
+each tick from the previous tick's state, preventing circularity — see Section 24).
+
+`velocity = Q / (channelWidth × channelDepth)` `[PHYSICS-BASED, simplified continuity equation]`, with
+`channelWidth`/`channelDepth` set at map generation per Water cell `[CONFIGURABLE]`.
+
+`STAGNANT_WATER`/`LAKE` cells: `flowDirection = none` unless overflow threshold exceeded, `velocity ≈ 0`.
+
+Overflow: if `waterLevel` exceeds a cell's basin capacity, excess is redistributed to the lowest neighbor as
+additional runoff next tick (bounded, prevents infinite accumulation).
+
+## SECTION 13 — Snow System
+
+`snowAccumulation(cell) += precipitation(cell)` when `temperature(cell) ≤ 0°C`, else precipitation falls as
+rain (adds to `rainfall` directly).
+
+`snowmelt(cell) = min(snowDepth(cell), meltRateConst × max(0, temperature(cell)))` `[GAME APPROXIMATION,
+degree-day melt model — a standard, simple, well-established hydrology approximation]`.
+
+Melted snow is added to `availableWater(cell)` for that tick, entering infiltration/runoff exactly like
+rainfall (Section 11). Sustained melt in Spring is therefore a predictable, learnable spike in downstream
+river flow — a designed causal chain for the Rule Learning / Causal Reasoning tests (Sections 23–24).
+
+## SECTION 14 — Machine System
+
+### Land Solar
+`capacity`, `efficiency`, `orientation`, `tilt`, `area`, `maintenanceCost`, `lifespanYears`, `buildCost`.
+Output per Section 8's `solarOutput` equation.
+
+### Floating Solar
+Same core properties plus `waterCompatibility` flag and optional `coolingBonusFactor
+[CONFIGURABLE, small, physically-motivated: cooler cell temperature raises panel efficiency slightly —
+PHYSICS-BASED but magnitude is a tunable, documented constant, not a hidden multiplier]`.
+
+### Wind Turbine
+`ratedPower`, `rotorSweptArea`, `efficiency (Betz-limited constant ≤ 0.593)`, `orientation/yaw`, `cutIn`,
+`ratedSpeed`, `cutOut`, `buildCost`, `maintenanceCost`, `lifespanYears`.
+
+`relativeAngle = |windDirection − turbineOrientation|`; `orientationEfficiency = cos(relativeAngle)` clipped
+to ≥ 0 `[PHYSICS-BASED, simplified yaw-misalignment cosine loss]`.
+
+`windPowerAvailable = 0.5 × airDensity × rotorSweptArea × windSpeed³` `[PHYSICS-BASED]`.
+
+`windOutput = 0` if `windSpeed < cutIn` or `> cutOut`; otherwise
+`= min(ratedPower, windPowerAvailable × efficiency × orientationEfficiency)`, i.e. output saturates at
+`ratedPower` once wind reaches `ratedSpeed` (standard turbine power curve) `[GAME APPROXIMATION of the real
+curve's smooth knee — modeled here as a clipped cubic for simplicity]`.
+
+### Hydro Turbine
+`P = ρ × g × Q × H × efficiency` `[PHYSICS-BASED]` — see Section 15 for full breakdown.
+
+### Cable
+`capacity` (max throughput), `transmissionLossPerCell [CONFIGURABLE]`, `buildCost`, `maintenanceCost`.
+
+## SECTION 15 — Machine Placement Rules
+
+`CAN_PLACE(machine, cell, worldState) → VALID | INVALID(reason)`.
+
+Checks performed, in order (fail-fast, first failing check is the returned reason):
+1. Terrain compatibility: `machine.type ∈ terrain.allowedMachines`.
+2. Overlay compatibility: current overlay stack (if any) does not forbid `machine.type`.
+3. Effective stability ≥ machine's `minStability` (Solar/Wind require `≥ 0.7 [CONFIGURABLE]`; effective
+   stability = base `stability` + reinforcement bonus from Gravel/Stone overlays, capped at 1.0).
+4. Water compatibility (Hydro requires a Water cell with `flowRate > Q_min` OR sufficient `waterLevel` for a
+   lake installation; Floating Solar requires `velocity ≤ V_float_max`).
+5. Slope/clearance: no machine on a cell whose elevation differs from all placeable neighbors by more than a
+   max-slope constant `[CONFIGURABLE]` (prevents absurd cliff-edge placements).
+6. Machine-specific requirements (e.g., Wind Turbine requires no taller machine within its rotor-diameter
+   radius, to avoid wake shadowing another turbine — `[GAME APPROXIMATION]`).
+7. Neighbor restrictions (e.g., two Hydro turbines cannot occupy the same contiguous water segment above a
+   density cap, representing shared head/flow competition).
+8. Connection requirement (if the level enforces grid connection — Section 16): a Cable path to a
+   substation/demand zone must exist or be plannable.
+
+Example: `INVALID: "Wind turbine requires stability >= 0.7, cell has 0.30 (unreinforced Mud)"`.
+
+## SECTION 16 — Overlay Rules
+
+Stack order (bottom→top): `BASE TERRAIN → TERRAIN OVERLAY → INFRASTRUCTURE/REINFORCEMENT → MACHINE → CABLE`.
+
+Key combinations:
+- Mud + Gravel = reinforced Mud (`stability += ΔG [CONFIGURABLE]`) → may then host Cable, and after a second
+  reinforcement tier (+Stone) may host Solar/Wind if the resulting effective stability clears 0.7.
+- Water + Floating Solar = valid only if `velocity ≤ V_float_max` (Section 6.6).
+- Sand + Land Solar = valid (base stability of Sand, `0.55`, is `[CONFIGURABLE]` — if the design target keeps
+  Sand below 0.7, Sand needs a Gravel reinforcement too; this is intentionally left tunable rather than
+  silently allowing Sand to trivially host Solar, to avoid the "sand=solar" memorization trap called out in
+  Section 41).
+- Snow + Land Solar = invalid (terrain forbids Solar outright, Section 6 Snow entry).
+- Stone + Wind = valid (Stone stability 0.95 clears threshold).
+- Full compatibility matrices: Section 36 / Final Overlay Compatibility Matrix.
+
+## SECTION 17 — Energy Network
+
+Machines generate energy each tick → energy enters connected Cable network → flows toward the nearest
+demand zone/substation → `transmissionLoss = distance(cells) × transmissionLossPerCell` is subtracted →
+delivered energy compared against zone demand → surplus (if any) is either curtailed (Levels 1–8, no storage)
+or, if a level unlocks storage `[CONFIGURABLE, later levels only]`, banked up to a capacity limit.
+
+Grid-connection requirement is itself level-gated (Section 20): early levels allow direct machine→zone
+delivery without cables to teach core mechanics; Level ≥6 requires an unbroken Cable path.
+
+## SECTION 18 — Economic Model
+
+`revenue(tick) = deliveredEnergy(zone) × price(zone, demandLevel)` `[GAME APPROXIMATION — price is not a
+free market, it is a configurable schedule per demand tier]`.
+
+Costs: `buildCost` (one-time), `maintenanceCost` (recurring per tick/day), `transmissionLoss` (implicit
+revenue loss), `machineDegradation` (health decays with age/weather exposure, reducing efficiency and
+eventually output to 0 at end of `lifespanYears`), `replacementCost` (rebuild after failure/end-of-life),
+`weatherDowntime` (e.g., extreme wind above `cutOut` forces turbine shutdown; extreme flood may damage a
+low-lying machine — `[CONFIGURABLE]` failure probabilities, always seeded).
+
+`profit(tick) = revenue(tick) − maintenanceCost(tick)`; `netWorth` accumulates profit minus one-time
+build/replacement costs.
+
+## SECTION 19 — Time System
+
+Hierarchy: `Tick → Hour → Day → Season → Year`. `[CONFIGURABLE]` ticks/hour and hours/day, default suggestion:
+1 tick = 1 simulated hour, 24 ticks = 1 day, ~90 days = 1 season, 360 days = 1 year (round numbers for
+learnability). Time acceleration lets the player fast-forward; the underlying engine still computes every
+tick internally for determinism (no skipped physics).
+
+Update cadence:
+- **Fast (every tick):** sun position, wind, cloud movement/formation/precipitation.
+- **Medium (every tick, but visibly slower-changing):** evaporation, infiltration, runoff, river flow, snow.
+- **Slow (daily/seasonal):** machine health/degradation, maintenance cost accrual, demand-zone level changes,
+  season transition parameters.
+
+## SECTION 20 — Season System
+
+Seasons: Spring, Summer, Autumn, Winter. Each has a parameter table (see Final tables) adjusting: solar
+amplitude/day-length (feeds Section 8 sinusoid), base temperature, base humidity/rainfall probability, global
+wind speed distribution, snow accumulation vs. melt bias, and river baseflow (spring snowmelt surge; summer
+lower baseflow; autumn rain increase; winter freeze reduces flow). None of these are applied as a flat energy
+multiplier — each modifies an upstream environmental variable that then propagates through the existing
+equations (Sections 8–13).
+
+## SECTION 21 — Level 1–10 Progression
+
+| Level | Terrain/Blocks | Machines | New Rules Introduced | Objective | Key Reasoning Skill |
+|---|---|---|---|---|---|
+| 1 | Grass, Sand only | Land Solar | Flat sun model, no shadows/orientation | Reach a generation target | Basic placement |
+| 2 | + Stone, Gravel | + Wind Turbine | Static wind field, roughness/elevation effects | Compare Solar vs Wind under fixed conditions | Comparative tradeoff reasoning |
+| 3 | Same | Same | Wind direction + turbine orientation matters | Orient turbines correctly | Directional reasoning |
+| 4 | Same | Same | Sun azimuth/elevation + season intro, panel orientation | Track daily/seasonal solar variation | Temporal reasoning |
+| 5 | + Water/River | + Hydro Turbine | Flow/head model | Add hydro to the portfolio | New-modality integration |
+| 6 | + Cloud overlays | Same | Full water cycle, rain affects river flow, cloud affects solar; Cable/grid connection required | Manage interacting subsystems | Systemic/causal reasoning |
+| 7 | + Mountain ranges | Same | Wind shadow, orographic lift | Exploit/avoid windward vs leeward zones | Spatial + causal reasoning |
+| 8 | + Snow/Peak | Same | Orographic rainfall, snowmelt-driven river surges | Plan around seasonal hydro variability | Delayed-consequence / temporal-causal reasoning |
+| 9 | Full terrain set, multiple demand zones | + Cable network at scale | Demand-zone economics, transmission loss | Build an efficient, profitable multi-source grid | Resource allocation / optimization |
+| 10 | Unfamiliar, procedurally regenerated map | All | Long-horizon (up to 10 sim-years) planning; changing conditions; hidden future weather | Sustain profitability & reliability over 10 years on a map never seen before | Full transfer / generalization |
+
+Per-level detail (available blocks/machines, hidden variables, known info, failure modes, reward, metrics) is
+elaborated in the Final Level 1–10 Table.
+
+## SECTION 22 — Rulebook (Numbered Rules)
+
+Format: `RULE-ID | Category | Condition | Effect | Variables | Priority | Example | Edge cases`.
+
+- **RULE-TERR-001** | Terrain | Any cell | Provides static properties only (Section 5) | elevation, roughness,
+  permeability, stability | 1 (evaluated before anything else) | Sand cell exposes `z0=0.01` to Wind Engine |
+  None never changes mid-tick.
+- **RULE-TERR-002** | Terrain | Mud saturated beyond capacity + adjacent Water cell for N consecutive days
+  `[CONFIGURABLE]` | Mud transforms to Water | moistureCapacity, adjacency, day-count | 5 | Prolonged flood
+  turns a Mud cell into a pond | Reversal (Water→Mud) not modeled by default.
+- **RULE-WIND-001** | Wind | Cell elevation > upwind neighbor elevation | Local wind speed may increase per
+  the exposure term (Section 9.2) | elevation, globalWind | 2 | Stone outcrop above surrounding Grass gets a
+  small speed boost | Capped exposure bonus to avoid unbounded growth on tall spikes.
+- **RULE-WIND-002** | Wind | Low `z0` (e.g., Sand) | Local wind speed increases via roughness-damping term
+  (Section 9.1) | z0, globalWind | 2 | Wind accelerates slightly crossing a sand flat | Only ever a modifier
+  on the ambient field, never a standalone bonus.
+- **RULE-WIND-003** | Wind | Higher-elevation cell exists upwind within `R_orographic` | Leeward cells receive
+  reduced wind speed (wind shadow) | elevation gradient, distance, globalWind direction | 3 | Turbine directly
+  leeward of a mountain underperforms | Effect decays to 0 beyond `R_orographic`.
+- **RULE-OROG-001** | Orographic | `orographicLift(cell) > 0` | Increases local cloud-formation probability
+  (Section 7) | elevation gradient, windSpeed, humidity | 4 | Windward mountain face gets more clouds/rain |
+  Leeward face gets a corresponding *rain-shadow* suppression (RULE-OROG-002).
+- **RULE-OROG-002** | Orographic | Leeward of a lifted/precipitated windward slope | Suppressed
+  precipitationPotential | humidity depletion carried across the ridge | 4 | Rain shadow desert behind a range |
+  Only applies if the windward side actually precipitated (moisture is "used up").
+- **RULE-CLOUD-001** | Cloud | `evaporation+humidity ≥ threshold` and (`cooling` or `orographicLift`) | Spawn
+  or grow cloud entity | humidity, temperature, orographicLift | 5 | Evaporating lake + orographic lift forms
+  a cloud downwind | Multiple qualifying cells near each other may merge cloud entities `[CONFIGURABLE]`.
+- **RULE-CLOUD-002** | Cloud | Cloud entity exists | Moves per wind vector; precipitates per Section 7 formula;
+  dissipates as `cloudWaterContent`/`cloudDensity` → 0 | windVector, cloudDensity | 5 | Cloud drifts from
+  mountain to valley and rains there | A cloud fully over Ocean/None-cell edge simply exits map bounds.
+- **RULE-SOLAR-001** | Solar | Any Solar machine, any tick | Output per Section 8 chain | sunElevation,
+  obstruction, cloud, orientation | 6 | Panel produces 0 at night (`sunElevation ≤ 0`) | Never negative output.
+- **RULE-WIND-004 (Turbine)** | Machine | Wind Turbine active | Output per Section 14 turbine curve | windSpeed,
+  orientation, cutIn/rated/cutOut | 6 | Turbine idles below cutIn | Output hard-clips to 0 outside [cutIn,cutOut].
+- **RULE-WATER-001** | Water cycle | Any cell with available water | Splits into evaporation/infiltration/
+  runoff per Section 11 | permeability, moistureCapacity, temperature | 4 | Sand infiltrates most of a rain
+  event | Sum of the three components never exceeds available water (mass balance, audited in Section 44).
+- **RULE-WATER-002** | Water cycle | Runoff generated | Routed to lowest 4-neighbor, deterministic tie-break | elevation |
+  4 | Two equal-elevation downhill options resolve N>E>S>W | Prevents nondeterministic flow.
+- **RULE-RIVER-001** | River | Water cell | `Q`, `velocity`, `waterLevel` updated from upstream + local runoff −
+  losses (Section 12) | upstream Q, runoff, evaporation, infiltration | 7 | Tributary merge sums Q | Must run in
+  topological (downstream) order within the tick.
+- **RULE-SNOW-001** | Snow | `temperature ≤ 0°C` and precipitation | Accumulates as `snowDepth` instead of
+  rainfall | temperature, precipitation | 4 | Winter storm builds snowpack on Peak | —
+- **RULE-SNOW-002** | Snow | `temperature > 0°C` and `snowDepth > 0` | Melts per degree-day model, adds to
+  available water | temperature, snowDepth | 4 | Spring warm-up triggers melt-driven river surge (this is a
+  designed Memory/Causal test event, Sections 22/23–24 of the eval framework) | Cannot melt more than
+  `snowDepth` present.
+- **RULE-HYDRO-001** | Machine | Hydro Turbine active | `P = ρgQH×efficiency`, output 0 if `Q < Q_min` or
+  `H < H_min` | Q, H, efficiency | 6 | Turbine on a near-dry riverbed produces 0 | Hard floor thresholds
+  prevent trivial "any water cell" farming.
+- **RULE-PLACE-001…008** | Placement | See Section 15 checklist | `VALID`/`INVALID(reason)` | all of the
+  above | 0 (checked before any generation logic runs) | — | Every INVALID must carry a human-readable reason.
+- **RULE-OVERLAY-001** | Overlay | Gravel/Stone placed atop Mud/Sand | Raises effective `stability`/
+  `permeability` for placement checks only (does not alter base terrain table) | overlay type, base terrain |
+  3 | Reinforced Mud can later host Cable, and Solar/Wind at a higher reinforcement tier | Effective values are
+  recomputed each tick from base + overlay stack, never mutated in place (keeps A. static / D. derived
+  separation intact).
+- **RULE-ECON-001** | Economy | Delivered energy > 0 | `revenue = delivered × price(zone,tier)` | delivered,
+  price | 8 (last, after all physical outputs are final) | — | Curtailed surplus (no storage) earns no revenue.
+- **RULE-ECON-002** | Economy | Machine age ≥ lifespan | Output forced to 0, flagged for replacement | age,
+  lifespanYears | 8 | 25-year-old turbine (in accelerated sim) retires | Replacement is a player action, not automatic.
+
+## SECTION 23 — Equations Index (summary; full derivations inline above)
+
+| # | Relationship | Equation | Label |
+|---|---|---|---|
+| E1 | Solar irradiance | `I = I_max × max(0, sin(sunElevation))` | PHYSICS-BASED (simplified) |
+| E2 | Effective irradiance | `I_eff = I × obstruction × cloudAtten × cosIncidence` | PHYSICS-BASED |
+| E3 | Solar output | `P_solar = I_eff × area × efficiency` | PHYSICS-BASED (simplified) |
+| E4 | Wind power available | `P_wind_avail = 0.5 ρ A v³` | PHYSICS-BASED |
+| E5 | Turbine output | `P_wind = clip(P_wind_avail × η × cos(Δangle), 0, ratedPower)` for `v∈[cutIn,cutOut]` else 0 | GAME APPROXIMATION |
+| E6 | Local wind speed | `v_local = v_global × roughnessFactor(z0) × elevationFactor × windShadowFactor` | GAME APPROXIMATION |
+| E7 | Evaporation | `E = k_evap × T_factor × (1−humidity) × waterAvail` | GAME APPROXIMATION |
+| E8 | Cloud formation trigger | `evap+humidity ≥ threshold AND (cooling OR lift)` | GAME APPROXIMATION |
+| E9 | Precipitation | `rain = cloudWaterContent × precipPotential × f(lift)` | GAME APPROXIMATION |
+| E10 | Infiltration | `I_f = min(avail, permeability × k_inf)` | GAME APPROXIMATION |
+| E11 | Runoff | `R = avail − I_f − E` | GAME APPROXIMATION (mass-balance identity) |
+| E12 | Snow accumulation | `snow += precip` if `T≤0` | GAME APPROXIMATION |
+| E13 | Snowmelt | `melt = min(snow, k_melt × max(0,T))` | GAME APPROXIMATION (degree-day) |
+| E14 | River flow | `Q_down = ΣQ_up + R_local − E − I_f(lakebed)` | GAME APPROXIMATION (mass-balance) |
+| E15 | Velocity | `v = Q / (width × depth)` | PHYSICS-BASED (continuity) |
+| E16 | Hydraulic head | `H = waterLevel(upstream) − waterLevel(turbine cell)` | PHYSICS-BASED (simplified) |
+| E17 | Hydro output | `P_hydro = ρ g Q H η`, 0 if `Q<Q_min` or `H<H_min` | PHYSICS-BASED |
+| E18 | Transmission | `delivered = generated − distance×lossPerCell` | GAME APPROXIMATION |
+| E19 | Revenue | `rev = delivered × price(zone,tier)` | GAME APPROXIMATION |
+
+Variables, units, ranges, and worked examples for each equation are given at first use in Sections 6–18
+above; the Example Walkthrough (Section 39) shows concrete numbers end-to-end.
+
+## SECTION 24 — Simulation Update Order (per tick)
+
+1. Advance time (tick/hour/day/season/year counters)
+2. Sun position (azimuth, elevation) from time+season
+3. Seasonal parameter update (temperature baseline, humidity baseline, wind distribution)
+4. Temperature update per cell (baseline + local modifiers, e.g. altitude lapse)
+5. Global wind vector update (weather layer, seeded)
+6. Local (terrain-modified) wind per cell (Section 9)
+7. Evaporation per cell (needs temperature, humidity, water availability — all already current)
+8. Cloud formation (needs evaporation, humidity, orographic lift from elevation+wind, all current)
+9. Cloud movement (needs local wind, current)
+10. Precipitation (needs cloud state just updated)
+11. Snow accumulation/melt (needs precipitation + temperature, current)
+12. Infiltration (needs precipitation+snowmelt as "available water", current)
+13. Runoff (needs infiltration, current — mass balance closes here)
+14. River flow update, source→downstream topological order (needs runoff, current)
+15. Machine outputs: Solar (needs sun+cloud+obstruction, all current), Wind (needs local wind, current),
+    Hydro (needs river flow/head, current)
+16. Transmission (needs machine outputs, current)
+17. Demand evaluation (zone schedule, independent input)
+18. Revenue (needs delivered energy vs. demand, both current)
+19. Machine health/degradation update (age, cumulative weather stress)
+20. Record full state snapshot (ground truth log, Section 28)
+21. Evaluate objectives / scoring deltas (Section 27)
+
+**Why this order avoids circularity:** every step only reads state that was either (a) fixed before the tick
+began (static terrain, Section 5) or (b) already recomputed earlier in *this same* tick, never a
+value that this tick has not yet produced. Rivers, the deepest dependency chain, are updated last among the
+physical layers, after evaporation/precipitation/infiltration have already been resolved for this tick, so
+`Q` never depends on a not-yet-updated future value. Economic values (E) are computed strictly after all
+physical/derived values (D), consistent with the layering in Section 3.
+
+## SECTION 25 — State Schema (conceptual, not code)
+
+```
+WorldState {
+  tick, day, season, year, seed
+  grid[x][y]: {
+    terrain: {id, elevation, roughness, permeability, stability, moistureCapacity, ...} (static)
+    overlays: [ordered list]
+    dynamic: {windSpeed, windDir, temperature, humidity, cloudDensity(local), snowDepth,
+              waterLevel, flowRate, velocity, ...}
+    machine: {type, orientation, capacity, efficiency, health, age} | null
+  }
+  clouds: [ {id, position, density, waterContent, altitude, movementVector, lifetime, ...} ]
+  demandZones: [ {id, cells[], demandLevel, price} ]
+  economy: {netWorth, cumulativeRevenue, cumulativeCost}
+}
+```
+
+## SECTION 26 — Action Schema
+
+```
+Action = PLACE(machineType, cell, orientation?) 
+       | REMOVE(cell)
+       | REINFORCE(cell, overlayType)
+       | PLACE_CABLE(pathCells[])
+       | SET_ORIENTATION(cell, newOrientation)
+       | ADVANCE_TIME(numTicks)   // acceleration control
+       | QUERY_PREDICTION(cell, machineType)  // for causal-reasoning eval tasks, Section 24 of eval
+```
+
+## SECTION 27 — Observation Schema
+
+Per Section 21 disclosure rules: each cell's static terrain, current dynamic state, and any placed machine
+are observable; cloud *entities* within a visibility radius are observable, entities beyond it are not (this
+radius is level-configurable, tightening as levels progress to increase partial-observability difficulty).
+
+## SECTION 28 — Scoring
+
+Composite score is a weighted sum `[CONFIGURABLE weights]` of ten separately-logged raw metrics:
+1. Energy generation (total kWh-equivalent)
+2. Energy reliability (delivered/demanded ratio over time, penalizing variance not just average)
+3. Economic profit (net worth trajectory)
+4. Infrastructure efficiency (output per unit build cost)
+5. Placement efficiency (valid, non-wasted placements vs. attempts)
+6. Prediction accuracy (for explicit `QUERY_PREDICTION` actions, scored against ground truth)
+7. Adaptation (score recovery speed after an environmental shock, e.g. drought/storm)
+8. Generalization (performance delta between training-map and held-out unfamiliar-map runs, Section 30)
+9. Long-term planning (performance trend over the 10-year horizon; penalizes short-horizon-only strategies)
+10. Resource efficiency (energy per unit of terrain disturbed/reinforced)
+
+Raw metrics are always logged independently of the composite, for researcher analysis.
+
+## SECTION 29 — AI Evaluation Protocol
+
+See Section 39 numbering (Experiments A–J) for the full matrix. Each experiment specifies: input map, allowed
+actions, observation space, objective, expected behavior, metric, ground truth source, and failure
+interpretation, so that a failing run can be attributed to a specific missing capability (e.g., "agent placed
+turbines correctly but failed to predict rain-shadow effect on Experiment C" isolates causal-reasoning failure
+from placement-skill failure).
+
+## SECTION 30 — Memory Tests
+
+Design pattern: inject a distinctive, rare weather/environmental event at an early simulated day (e.g., a
+specific wind-direction+mountain combination causing an unusual localized drought at Day 10), then reproduce
+a structurally similar event later (Day 80, different exact coordinates or timing) and measure whether the
+agent's response time/quality improves versus its first encounter (short-term: within one session context;
+long-term: across a session boundary if the harness supports persistent agent memory; spatial: does the agent
+recall *where* the effect will recur if the same map repeats; rule: does the agent recall *why*, not just
+*where*; event: can the agent recall the antecedent event that predicted this outcome).
+
+## SECTION 31 — Causal Reasoning Tests
+
+Explicit prediction prompts tied to `QUERY_PREDICTION` actions, e.g.: "If I place this turbine here, what
+happens?", "If a mountain blocks the wind, which turbine loses output?", "If rainfall increases upstream,
+what happens to downstream hydro?", "If cloud density increases, what happens to solar?", "If winter snow
+accumulates, what happens when spring begins?" Each has a ground-truth answer computable directly from
+Sections 6–13's deterministic equations, enabling automatic scoring.
+
+## SECTION 32 — Spatial Reasoning Tests
+
+Benchmark tasks isolating: distance/direction judgments (which cell is windward of a marked mountain?),
+neighbor reasoning (which cells will lose sun to this obstruction at 3pm?), upstream/downstream reasoning
+(if I dam this cell, which downstream cells lose flow?), and cable-connectivity reasoning (is there a valid
+path from machine X to zone Y?). Each task has a single deterministic correct answer from ground truth.
+
+## SECTION 33 — Generalization Tests
+
+Same rule-set, systematically varied map generator seed producing new mountain shapes, river paths, terrain
+distributions, and demand-zone layouts, while all physical constants (Sections 6–19) remain fixed. Agent
+performance is compared training-map vs. held-out map; a large gap indicates memorization rather than rule
+learning (Section 41's core concern).
+
+## SECTION 34 — Unfamiliar-Game Tests
+
+Level 10 specifically: entirely new map, new season starting point, new weather-sequence seed, new demand
+distribution, but identical underlying physics module set. This is the hardest transfer test and the primary
+metric for "reusable world-model learning" (Section 29 metric #8).
+
+## SECTION 35 — Edge Cases
+
+Explicit handling (each cross-referenced to the governing rule/equation):
+- `windSpeed=0`: turbines idle (output 0, RULE-WIND-004); no cloud movement that tick.
+- Rapid wind direction change: recomputed fresh each tick from current global wind, no smoothing lag
+  `[GAME APPROXIMATION — could add inertia later, CONFIGURABLE]`.
+- `cloudDensity=1`: max attenuation applied, solar output at its floor but never exactly forced to 0 unless
+  `terrainObstruction` also 0 and it's night.
+- `cloudDensity=0` / `rainfall=0`: no precipitation term contributes that tick; water cycle continues via
+  any existing river baseflow.
+- `riverFlow=0`: Hydro output forced to 0 via `Q<Q_min` floor (RULE-HYDRO-001), never divides by zero.
+- Extremely high river flow: velocity capped at a channel-capacity constant; excess becomes flood overflow
+  (Section 12), not unbounded output.
+- Water freezes (temperature ≤ threshold in a Water cell, `[CONFIGURABLE]` optional rule for higher levels):
+  `flowRate → 0` for that cell until thaw.
+- Snow melts fully: `snowDepth=0`, melt term stops contributing (RULE-SNOW-002 floor at available `snowDepth`).
+- Contiguous mountain range: orographic contributions summed and capped (Section 10).
+- Two rivers merge: `Q` sums at confluence cell (RULE-RIVER-001).
+- River meets lake: lake absorbs inflow into `waterLevel`, outflow (if any) determined by lake's own
+  downstream-lowest-neighbor rule.
+- Solar panel fully shaded: `terrainObstruction=0` → `solarOutput=0`, no negative output.
+- Panel facing away from sun: `cosIncidence≤0` clipped to 0 → output 0, not negative.
+- Turbine facing away from wind: `cos(Δangle)` clipped to 0 → output 0.
+- Terrain reinforced: effective stability recomputed via RULE-OVERLAY-001, re-evaluated every placement check.
+- Machine disconnected from grid (where connection is required): energy generated but not delivered → 0
+  revenue from that machine, logged separately from generation metrics (Section 27, metrics #1 vs #2/#3).
+- Cable overload (`throughput > capacity`): excess energy is curtailed (lost), not silently transmitted.
+- Machine end-of-life: forced output 0 (RULE-ECON-002), flagged for player replacement action.
+- Demand exceeds supply: zone receives partial delivery, reliability metric (#2) penalized proportionally.
+- Supply exceeds demand: surplus curtailed unless storage is unlocked for that level.
+- Two machines on incompatible cells: prevented at placement time (`CAN_PLACE` returns INVALID); never an
+  in-simulation state, so no runtime resolution rule is needed for this case.
+- Machine placed on invalid overlay: same — prevented by `CAN_PLACE`, Section 15.
+
+## SECTION 36 — Determinism / Reproducibility
+
+Given `WORLD_SEED`, world configuration, the full ordered action log, and simulation time elapsed, the engine
+must reproduce bit-identical state. All stochastic processes (weather variation, cloud spawn jitter, demand
+variation, machine failure probability) draw from a single seeded PRNG stream, advanced in the fixed Section
+24 order, and are documented (mean, distribution shape, bounds) rather than left as unconstrained randomness.
+This is required both for fair AI evaluation (Section 29) and for debugging (Section 44 audit).
+
+## SECTION 37 — Balancing
+
+No renewable source may dominate across all levels: Solar is predictable but time/weather-bound (zero at
+night, degraded by cloud/season); Wind is potentially high-output but spatially and weather dependent, with
+real orientation/cut-in/cut-out constraints; Hydro is stable once flow/head are secured but is
+location-locked and vulnerable to seasonal flow variation (Section 13's snowmelt/drought swings); Floating
+Solar trades land-independence for water-surface competition with Hydro siting and velocity restrictions.
+These tradeoffs emerge from the equations above, not from hand-tuned per-terrain bonuses — the explicit
+anti-pattern flagged in Section 41.
+
+## SECTION 38 — Testing Strategy
+
+- **Unit-level:** each engine module (Wind, Solar, Water Cycle, River, Snow, Cloud, Machine, Economy) tested
+  against hand-computed expected outputs for known inputs (see Section 39 walkthrough as the seed case).
+- **Mass-balance tests:** water in = water out + stored, for every tick, across the whole grid (catches
+  infinite-water or vanishing-water bugs, Section 44).
+- **Energy-conservation sanity tests:** total generation ≥ total delivered + losses + curtailment, always.
+- **Determinism regression tests:** same seed + same action log → identical state hash, run repeatedly.
+- **Placement rule tests:** exhaustive matrix of terrain×overlay×machine combinations checked against Section
+  36's compatibility matrices.
+- **Level playthrough tests:** scripted "reasonable" and "adversarial" action sequences per level, checking
+  the objective/scoring pipeline behaves as designed.
+- **Evaluation-protocol tests:** run Experiments A–J (Section 39) against a trivial baseline agent (e.g.
+  random, or "always solar") to confirm the scoring system actually separates good from bad strategies and
+  that no single terrain→machine heuristic scores near-optimally (the core anti-memorization check).
+
+## SECTION 39 — Example Simulation Walkthrough (10×10 grid)
+
+Setup: a 10×10 grid with a Grass baseline, a Sand patch (cols 0–2), a 3-cell Stone "mountain" ridge rising to
+elevation 5 at col 6 (row 4–6), a River running from the mountain base (col 7) down to the SE corner, one
+Land Solar at (1,1) on Sand, one Wind Turbine at (5,5) just leeward of the ridge, one Hydro Turbine at (8,8)
+on the river. `WORLD_SEED = 42`. Season = Summer, Day 1, `timeOfDay = 12:00` (solar noon).
+
+**Tick t0 (noon, Day 1):**
+- `sunElevation ≈ 75°` (summer noon, high) → `baseSolarIrradiance ≈ 0.97×I_max`.
+- Solar at (1,1): no obstruction (flat sand, no tall neighbor in sun direction), no cloud yet →
+  `effectiveIrradiance ≈ 0.97×I_max`; with `area=10, efficiency=0.20` → `solarOutput ≈ 194 (arbitrary units)`.
+- `globalWind = 12 m/s from the West`. At (5,5), leeward of the ridge (RULE-WIND-003): wind shadow reduces
+  local speed to `≈ 7.5 m/s`. Turbine `cutIn=3, rated=12, cutOut=25`, `orientation` aligned with wind
+  (`Δangle=0°`) → `windPowerAvailable ∝ 7.5³`, output well below rated: `windOutput ≈ 38% of ratedPower`.
+- River at (8,8): baseflow `Q=15 m³/s` (no rain yet this run), `H≈4m` (elevation drop from source) →
+  `hydroOutput = ρ g Q H η ≈ 1000×9.8×15×4×0.85 ≈ 500 kW`-equivalent (arbitrary game units).
+- No clouds present yet (humidity below threshold this tick).
+- `revenue(t0) ≈ (194+X_wind+500) × price` minus maintenance — delivered fully since no grid-capacity issue
+  in this small example.
+
+**Tick t0+48h (Day 3, storm arrives):** Increased humidity from ridge-adjacent evaporation + orographic lift
+on the windward (west) face of the Stone ridge triggers cloud formation (RULE-CLOUD-001) at col 5–6. The
+cloud drifts east with the wind (RULE-CLOUD-002), passes over (5,5) and (1,1) is unaffected (west of the
+cloud's path). Over (5,5): `cloudDensity=0.6` reduces any co-located solar (none here) but doesn't affect the
+turbine (wind unaffected by cloud presence in this model). The cloud precipitates over the ridge's windward
+side; rain infiltrates partially into Stone (low permeability) so most becomes runoff, flowing downhill
+toward the River source cell — `Q` at (8,8) rises over the next several ticks as this pulse propagates
+downstream (RULE-RIVER-001), producing a delayed, predictable hydro-output increase — exactly the kind of
+delayed-consequence chain the Causal Reasoning tests (Section 31) are designed to probe.
+
+**Tick t0+72h:** Leeward (east) side of the ridge, where the Wind Turbine sits, shows suppressed cloud
+formation (RULE-OROG-002, rain shadow) — no additional rain there even though the windward side just had a
+storm — a directly observable, explainable spatial contrast for the agent to learn from.
+
+This walkthrough is illustrative; the Final numeric constants are all `[CONFIGURABLE]` and should be tuned
+during implementation using the Unit-level tests in Section 38 before trusting exact numbers.
+
+## SECTION 40 — Implementation Recommendations
+
+Implement engines as independent modules communicating only through the WorldState object (Section 25), in
+the exact dependency order of Section 24, so each module is unit-testable in isolation with mocked upstream
+state. Keep all "unknown/uncertain" numeric constants behind a single tunable config object rather than
+inlined literals, so balancing (Section 37) doesn't require touching physics code. Build the Section 39
+walkthrough as an actual fixture-based regression test before writing any UI or agent-facing code — if the
+walkthrough's manual math doesn't match the engine's output, fix the engine before proceeding to levels/UI.
+Implement the mass-balance and energy-conservation checks (Section 38) as always-on runtime assertions in
+development builds, since these are the cheapest way to catch the exact bugs Section 44 warns about.
+
+---
+
+## Research Validity (Section 40 of the outline / positioning statement)
+
+This environment sits alongside procedurally-regenerable, rule-explicit benchmarks (in the spirit of ARC-AGI's
+train/held-out generalization split, and structured-reasoning puzzle benchmarks like Sudoku variants) but adds
+continuous, physically-motivated dynamics and long-horizon planning, which those benchmarks generally lack.
+Its defining property is the one called out repeatedly above: **the underlying causal rules are fixed and
+learnable through interaction, while the surface layout (map, seed) is freely regenerable** — so a
+train/held-out split (Section 33) can isolate genuine world-model transfer from layout memorization, the same
+way ARC-AGI isolates rule abstraction from surface-pattern matching, but here applied to a continuous,
+partially-stochastic physical simulation rather than static grids.
+
+---
+
+## SECTION 41 (design mistakes) — Compliance Check
+
+This spec was checked against all 13 listed anti-patterns: no terrain carries a flat energy multiplier (every
+output traces through Sections 6–13's chained equations); "mountain=good wind" and "sand=good solar" are both
+false in general within this model (a leeward mountain cell has *worse* wind, per RULE-WIND-003; sand's solar
+output depends entirely on sun/cloud/obstruction, not a sand bonus); weather randomness is seeded and bounded
+(Section 36); rules are fully disclosed as discoverable-through-interaction (Section 21); the physics model is
+deliberately simplified to remain playable (every equation is explicitly `[GAME APPROXIMATION]` or
+`[PHYSICS-BASED, simplified]`, never claimed as a full scientific simulator); levels differ by mechanic
+introduction, not just map size (Section 21); money is one of ten scoring metrics, not the sole objective
+(Section 28); no single technology dominates by construction (Section 37); no invented pseudo-scientific terms
+lack computational meaning (every named variable appears in an equation); update order is fixed precisely to
+prevent circular dependencies (Section 24); invalid states are prevented at placement time rather than
+resolved at runtime (Section 35); and determinism is a hard requirement (Section 36).
+
+---
+
+# FINAL DELIVERABLES
+
+## A. Final Master Property Table
+See Section 6's table (T01–T07) — the authoritative quick-reference; narrative detail in Sections 6.1–6.7.
+Cloud/Sun/Wind/Water/Snow/Machine/Economy master tables are the variable lists given in Sections 7, 8, 9,
+11–13, 14, and 18 respectively (kept inline there rather than duplicated, since each is already a complete
+"table" of that subsystem's properties).
+
+## B. Final Rule Index
+RULE-TERR-001, RULE-TERR-002, RULE-WIND-001…004, RULE-OROG-001…002, RULE-CLOUD-001…002, RULE-SOLAR-001,
+RULE-WATER-001…002, RULE-RIVER-001, RULE-SNOW-001…002, RULE-HYDRO-001, RULE-PLACE-001…008, RULE-OVERLAY-001,
+RULE-ECON-001…002. (Full detail: Section 22.)
+
+## C. Final Equation Index
+E1–E19, listed with labels in Section 23.
+
+## D. Final Dependency Graph
+
+```
+Terrain (static) ─┬─→ Wind Engine ─────────────┐
+                   ├─→ Water Cycle Engine ──┐   │
+                   └─→ Atmosphere Engine ───┼───┤
+                                             ▼   ▼
+                                     Cloud Engine ──→ Precipitation ──→ Snow Engine
+                                             │                              │
+                                             ▼                              ▼
+                                     Solar Engine                  River Engine ──→ Hydro calc
+                                             │                              │
+                                             └──────────────┬───────────────┘
+                                                             ▼
+                                                     Machine Engine (all outputs)
+                                                             ▼
+                                                     Energy Network (transmission)
+                                                             ▼
+                                                     Economy Engine (revenue/cost)
+                                                             ▼
+                                                     Scoring / Evaluation
+```
+
+## E. Final Simulation Update Order
+See Section 24, steps 1–21 (authoritative, do not reorder without re-running the circularity argument given there).
+
+## F. Final Level 1–10 Table
+See Section 21's table.
+
+## G. Final Machine Compatibility Matrix
+
+| Terrain \ Machine | LandSolar | FloatSolar | Wind | Hydro | Cable |
+|---|---|---|---|---|---|
+| Grass/Dirt | YES | NO | YES | NO | YES |
+| Sand | CONDITIONAL (stability≥0.7 after reinforcement, per Section 16) | NO | NO | NO | YES |
+| Mud/Clay | NO (unreinforced) / CONDITIONAL (after 2-tier reinforcement) | NO | CONDITIONAL (after reinforcement) | NO | CONDITIONAL (after Gravel reinforcement) |
+| Stone/Rock | YES | NO | YES | NO | YES |
+| Snow/Peak | NO | NO | YES | NO | NO |
+| Water (Lake/Stagnant) | NO | YES | NO | YES | NO |
+| Water (Fast River) | NO | CONDITIONAL (velocity≤V_float_max) | NO | YES | NO |
+| Gravel | YES | NO | YES | NO | YES |
+
+## H. Final Overlay Compatibility Matrix
+
+|  | Grass | Sand | Mud | Stone | Snow | Water | Gravel |
+|---|---|---|---|---|---|---|---|
+| Grass | — | NO | NO | NO | NO | NO | YES |
+| Sand | NO | — | CONDITIONAL (irrigation rule) | NO | NO | NO | YES |
+| Mud | NO | CONDITIONAL | — | YES | NO | NO | YES |
+| Stone | NO | NO | YES | — | YES | NO | YES |
+| Snow | NO | NO | NO | YES | — | NO | NO |
+| Water | NO | NO | NO | NO | NO | — | NO |
+| Gravel | YES | YES | YES | YES | NO | NO | — |
+
+(Cell = "can X overlay Y". Matrix is not required to be symmetric — Gravel can overlay most things but few
+things overlay Gravel back, by design, since Gravel is itself the reinforcement layer.)
+
+## I. Top 20 Test Cases
+
+1. Mass balance: rainfall = infiltration+runoff+evaporation exactly, every cell, every tick.
+2. Energy conservation: generation ≥ delivered+loss+curtailed, every tick.
+3. Determinism: identical seed+action log → identical state hash across 2 runs.
+4. Wind shadow: leeward turbine output strictly less than an identical windward turbine, same wind speed.
+5. Rain shadow: leeward-of-ridge cloud formation strictly less likely than windward, same humidity input.
+6. Solar at night: `sunElevation≤0` → `solarOutput=0` exactly, never negative.
+7. Turbine below cutIn: `windOutput=0` exactly.
+8. Turbine above cutOut: `windOutput=0` exactly (safety shutdown).
+9. Hydro with `Q<Q_min`: output forced to 0, no divide-by-zero.
+10. Snowmelt cannot exceed available `snowDepth` in a single tick.
+11. River flow never negative; confluence `Q` equals sum of contributing `Q`s.
+12. Placement on invalid terrain always returns INVALID with a specific, non-generic reason string.
+13. Reinforced Mud passes the stability≥0.7 check only after the documented overlay stack is present.
+14. Floating Solar rejected on a river cell above `V_float_max`.
+15. Machine at end-of-life produces exactly 0 output regardless of environmental inputs.
+16. Cable overload curtails exactly the excess above `capacity`, delivers exactly `capacity`.
+17. Two incompatible machines can never both occupy one cell (placement-time prevention only, no runtime state).
+18. Generalization gap test: agent score on held-out map vs. training map, flag if gap exceeds a threshold.
+19. Memory test: agent's second-encounter response time/accuracy on a repeated event pattern improves vs. first.
+20. Anti-memorization probe: an agent using only a fixed terrain→machine lookup table scores materially below
+    an agent that reasons from current wind/sun/cloud/water state, on the same held-out map.
+
+## J. List of All Configurable Parameters
+
+Cell/world scale unit; grid neighbor model choice (4- vs 8-connected specifics); per-block `stability`,
+`permeability` baseline values (Section 6 table, several flagged); reinforcement Δstability from Gravel/Stone
+overlays; Mud-saturation day-count and threshold before transforming to Water; `V_float_max` (floating solar
+velocity ceiling); minimum stability for Solar/Wind placement (`0.7` default); shadow-casting range constant;
+`k_atten` cloud attenuation coefficient; cloud condensation threshold; cloud dissipation rate; `R_orographic`
+range of mountain influence; `k_evap`, `k_inf` water-cycle rate constants; degree-day snowmelt constant
+`k_melt`; channel width/depth per Water cell; overflow basin capacity; turbine `cutIn/rated/cutOut` per
+turbine type; Betz-limit efficiency ceiling; floating-solar cooling bonus factor; `transmissionLossPerCell`;
+demand-tier price schedule; storage capacity and unlock level (if enabled); machine `buildCost`/
+`maintenanceCost`/`lifespanYears` per machine type; weather-downtime failure probabilities; ticks/hour,
+hours/day, days/season, days/year; scoring-metric weights (Section 28); visibility radius for cloud
+observability per level (Section 27); mountain wind-direction-deflection toggle (Level ≥7 optional);
+water-freeze threshold and toggle (higher-level optional rule).
+
+---
+
+*End of specification. No implementation code is included above, per the project requirement that this
+document serve as the frozen technical spec for a separate implementation pass.*
