@@ -22,6 +22,17 @@ export interface GridSimulationResult {
 
 export class EnergyNetworkEngine {
   /**
+   * Helper to check if a cell contains a high-voltage cable/conduit
+   */
+  public static isConduitOrCable(cell: CellState | undefined | null): boolean {
+    if (!cell) return false;
+    if (cell.cable || (cell as any).has_cable || (cell as any).hasCable) return true;
+    const typeStr = String(cell.machine?.type ?? cell.machine ?? '').toLowerCase();
+    if (typeStr === 'conduit' || typeStr === 'cable') return true;
+    return false;
+  }
+
+  /**
    * Simulates generation -> transmission losses -> cable capacity limits -> demand delivery -> revenue
    */
   public static updateGrid(
@@ -34,15 +45,18 @@ export class EnergyNetworkEngine {
   ): GridSimulationResult {
     const { transmissionLossPerCell } = CONFIGURABLE_PARAMS;
 
-    let totalGeneratedKW = 0;
-    let totalDeliveredKW = 0;
+    let totalGeneratedPower = 0;
+    let totalDeliveredPower = 0;
     let totalTransmissionLossKW = 0;
     let totalCurtailedKW = 0;
     let totalMaintenance = 0;
+    let totalRevenue = 0;
 
-    // Reset delivered energy across all demand zones
+    // Reset delivered energy across all demand zones and track remaining demand per zone
+    const zoneRemainingDemand = new Map<string, number>();
     for (const dz of demandZones) {
       dz.deliveredEnergy = 0;
+      zoneRemainingDemand.set(dz.id, dz.demandLevel);
     }
 
     // 1. Process all generators and transmission paths
@@ -53,23 +67,59 @@ export class EnergyNetworkEngine {
         if (cell.machine && cell.machine.isOperating) {
           totalMaintenance += cell.machine.maintenanceCostPerTick;
           const gen = cell.derived.powerGenerated;
-          totalGeneratedKW += gen;
+          totalGeneratedPower += gen;
 
           if (gen > 0) {
-            // Find reachable demand zone
+            if (!requireGridConnection) {
+              // In early levels (1-5), generators deliver directly without transmission conduit loss
+              cell.derived.transmissionLoss = 0;
+              cell.derived.curtailedPower = 0;
+              cell.derived.powerDelivered = Number(gen.toFixed(1));
+
+              totalDeliveredPower += gen;
+              // Direct tariff revenue in unconnected levels
+              const tariff = demandZones[0]?.pricePerUnit ?? 0.15;
+              totalRevenue += gen * tariff;
+              if (demandZones[0]) {
+                demandZones[0].deliveredEnergy += gen;
+              }
+              continue;
+            }
+
+            // For grid-connected levels (Levels 6-10):
+            // Find reachable demand zone with available capacity (or nearest reachable zone)
             let targetZone: DemandZone | null = null;
             let targetCell: { x: number; y: number } | null = null;
             let minDistance = Infinity;
 
+            // First priority: reachable demand zone that still has remaining demand capacity
             for (const dz of demandZones) {
-              const isConn = !requireGridConnection || this.isConnectedToDemandZone(x, y, grid, width, height, dz);
+              const isConn = this.isConnectedToDemandZone(x, y, grid, width, height, dz);
               if (isConn) {
+                const remaining = zoneRemainingDemand.get(dz.id) ?? 0;
                 const dzCenter = dz.cells[0] || { x: width - 1, y: height - 1 };
                 const dist = Math.abs(x - dzCenter.x) + Math.abs(y - dzCenter.y);
-                if (dist < minDistance) {
+                if (remaining > 0 && dist < minDistance) {
                   minDistance = dist;
                   targetZone = dz;
                   targetCell = dzCenter;
+                }
+              }
+            }
+
+            // Second priority: if all reachable zones are saturated, route to nearest reachable zone
+            if (!targetZone) {
+              minDistance = Infinity;
+              for (const dz of demandZones) {
+                const isConn = this.isConnectedToDemandZone(x, y, grid, width, height, dz);
+                if (isConn) {
+                  const dzCenter = dz.cells[0] || { x: width - 1, y: height - 1 };
+                  const dist = Math.abs(x - dzCenter.x) + Math.abs(y - dzCenter.y);
+                  if (dist < minDistance) {
+                    minDistance = dist;
+                    targetZone = dz;
+                    targetCell = dzCenter;
+                  }
                 }
               }
             }
@@ -79,6 +129,7 @@ export class EnergyNetworkEngine {
               cell.derived.powerDelivered = 0;
               cell.derived.curtailedPower = gen;
               totalCurtailedKW += gen;
+              console.log(`Machine at ${x},${y} -> Connected: false, Raw Gen: ${gen}, Delivered: 0`);
               continue;
             }
 
@@ -91,58 +142,80 @@ export class EnergyNetworkEngine {
             let availableForDelivery = gen - loss;
 
             // Cable capacity limit check (Section 17, Test 16: max 1000 kW per line)
-            let curtailed = 0;
+            let lineCurtailed = 0;
             const cableCapacity = cell.cable ? cell.cable.capacity : 1000;
             if (availableForDelivery > cableCapacity) {
-              curtailed = availableForDelivery - cableCapacity;
+              lineCurtailed = availableForDelivery - cableCapacity;
               availableForDelivery = cableCapacity;
             }
 
-            cell.derived.transmissionLoss = Number(loss.toFixed(1));
-            cell.derived.powerDelivered = Number(availableForDelivery.toFixed(1));
-            cell.derived.curtailedPower = Number(curtailed.toFixed(1));
+            // Audit Multi-Zone Demand Caps:
+            // Check remaining demand capacity of target zone for this tick
+            const remainingDemand = zoneRemainingDemand.get(targetZone.id) ?? 0;
+            const powerAbsorbed = Math.min(availableForDelivery, remainingDemand);
+            const excessOverDemand = availableForDelivery - powerAbsorbed;
 
+            // Cumulative filling of target zone
+            targetZone.deliveredEnergy += powerAbsorbed;
+            zoneRemainingDemand.set(targetZone.id, Math.max(0, remainingDemand - powerAbsorbed));
+
+            // Accumulate delivered power and revenue
             totalTransmissionLossKW += loss;
-            totalDeliveredKW += availableForDelivery;
-            totalCurtailedKW += curtailed;
+            totalCurtailedKW += lineCurtailed + excessOverDemand;
+            totalDeliveredPower += powerAbsorbed;
+            totalRevenue += powerAbsorbed * targetZone.pricePerUnit;
 
-            // Attribute power to target demand zone
-            targetZone.deliveredEnergy += availableForDelivery;
+            cell.derived.transmissionLoss = Number(loss.toFixed(1));
+            cell.derived.powerDelivered = Number(powerAbsorbed.toFixed(1));
+            cell.derived.curtailedPower = Number((lineCurtailed + excessOverDemand).toFixed(1));
+
+            console.log(`Machine at ${x},${y} -> Connected: true, Raw Gen: ${gen}, Delivered: ${cell.derived.powerDelivered}`);
           }
         }
       }
     }
 
-    // 2. Evaluate demand fulfillment and revenue across all demand zones (Section 18, E19)
-    let totalRevenue = 0;
+    // 2. Evaluate total demand and fulfillment stats
     let totalDemand = 0;
     let totalFulfilled = 0;
-
     for (const dz of demandZones) {
-      const fulfilled = Math.min(dz.demandLevel, dz.deliveredEnergy);
-      dz.deliveredEnergy = Number(fulfilled.toFixed(1));
-      totalRevenue += dz.deliveredEnergy * dz.pricePerUnit;
+      dz.deliveredEnergy = Number(dz.deliveredEnergy.toFixed(1));
       totalDemand += dz.demandLevel;
       totalFulfilled += dz.deliveredEnergy;
     }
 
-    // Update economy state
+    // Operating profit for this tick (delivered revenue - recurring maintenance expenses)
+    // Note: One-time capital construction costs are excluded from tick operating profit rate.
+    const tickOperatingProfit = Number((totalRevenue - totalMaintenance).toFixed(2));
+
+    const prevHistory = Array.isArray(economy.tickProfitHistory) ? economy.tickProfitHistory : [];
+    const updatedHistory = [...prevHistory, tickOperatingProfit].slice(-24);
+    economy.tickProfitHistory = updatedHistory;
+    economy.rollingDailyProfit = Number(
+      updatedHistory.reduce((sum, val) => sum + val, 0).toFixed(2)
+    );
+
+    // Save current tick totals on economy object
+    economy.totalDeliveredPower = Number(totalDeliveredPower.toFixed(1));
+    economy.totalGeneratedPower = Number(totalGeneratedPower.toFixed(1));
+
+    // Update economy cumulative state
     economy.cumulativeRevenue += totalRevenue;
     economy.cumulativeCost += totalMaintenance;
     economy.cash += totalRevenue - totalMaintenance;
-    economy.cumulativeGenerated += totalGeneratedKW;
-    economy.cumulativeDelivered += totalDeliveredKW;
+    economy.cumulativeGenerated += totalGeneratedPower;
+    economy.cumulativeDelivered += totalDeliveredPower;
     economy.cumulativeCurtailed += totalCurtailedKW;
     economy.netWorth = economy.cash + (economy.cumulativeGenerated * 0.1);
     economy.reliabilityRatio = totalDemand > 0 ? Number((totalFulfilled / totalDemand).toFixed(3)) : 1.0;
 
     // Energy conservation audit: Generation >= Delivered + Losses + Curtailed
-    const unaccounted = totalGeneratedKW - (totalDeliveredKW + totalTransmissionLossKW + totalCurtailedKW);
+    const unaccounted = totalGeneratedPower - (totalDeliveredPower + totalTransmissionLossKW + totalCurtailedKW);
     const isEnergyConserved = Math.abs(unaccounted) < 0.05;
 
     return {
-      totalGeneratedKW: Number(totalGeneratedKW.toFixed(1)),
-      totalDeliveredKW: Number(totalDeliveredKW.toFixed(1)),
+      totalGeneratedKW: Number(totalGeneratedPower.toFixed(1)),
+      totalDeliveredKW: Number(totalDeliveredPower.toFixed(1)),
       totalTransmissionLossKW: Number(totalTransmissionLossKW.toFixed(1)),
       totalCurtailedKW: Number(totalCurtailedKW.toFixed(1)),
       isEnergyConserved,
@@ -152,7 +225,7 @@ export class EnergyNetworkEngine {
   }
 
   /**
-   * Evaluates if a machine at (x, y) is connected to the target demand zone via adjacent cables
+   * Evaluates if a machine at (x, y) is connected to the target demand zone via adjacent cables/conduits
    * Section 17: Level >= 6 unbroken cable requirement
    */
   public static isConnectedToDemandZone(
@@ -165,50 +238,45 @@ export class EnergyNetworkEngine {
   ): boolean {
     if (!demandZone || !demandZone.cells || !demandZone.cells.length) return true;
 
-    // Check if directly adjacent to any cell in demand zone
+    // Direct adjacency or overlap of generator cell to any cell in demand zone
     for (const dz of demandZone.cells) {
       if (Math.abs(x - dz.x) + Math.abs(y - dz.y) <= 1) return true;
     }
 
-    // BFS through cable network
+    // BFS through cable / conduit network
     const visited = new Set<string>();
     const queue: Array<{ x: number; y: number }> = [];
 
-    // Starting points: if machine cell has cable or adjacent cells have cable
-    if (grid[y][x].cable) {
-      queue.push({ x, y });
-      visited.add(`${x},${y}`);
-    } else {
-      const dirs = [{ dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }];
-      for (const d of dirs) {
-        const nx = x + d.dx;
-        const ny = y + d.dy;
-        if (nx >= 0 && nx < width && ny >= 0 && ny < height && grid[ny][nx].cable) {
-          queue.push({ x: nx, y: ny });
-          visited.add(`${nx},${ny}`);
-        }
-      }
-    }
+    // Always allow the generator tile itself to initiate search
+    queue.push({ x, y });
+    visited.add(`${x},${y}`);
+
+    const dirs = [{ dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }];
 
     while (queue.length > 0) {
       const curr = queue.shift()!;
 
-      // Check if curr is adjacent to any demand zone cell
+      // Check if curr is in or directly adjacent to any demand zone cell
       for (const dz of demandZone.cells) {
         if (Math.abs(curr.x - dz.x) + Math.abs(curr.y - dz.y) <= 1) {
           return true;
         }
       }
 
-      const dirs = [{ dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }];
       for (const d of dirs) {
         const nx = curr.x + d.dx;
         const ny = curr.y + d.dy;
-        const key = `${nx},${ny}`;
-        if (nx >= 0 && nx < width && ny >= 0 && ny < height && !visited.has(key)) {
-          if (grid[ny][nx].cable) {
-            visited.add(key);
-            queue.push({ x: nx, y: ny });
+        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+          const key = `${nx},${ny}`;
+          if (!visited.has(key)) {
+            const isDZ = demandZone.cells.some(c => c.x === nx && c.y === ny);
+            const isConduit = this.isConduitOrCable(grid[ny][nx]);
+
+            if (isDZ || isConduit) {
+              visited.add(key);
+              if (isDZ) return true;
+              queue.push({ x: nx, y: ny });
+            }
           }
         }
       }
@@ -243,22 +311,9 @@ export class EnergyNetworkEngine {
 
     const startKey = `${startX},${startY}`;
     visited.add(startKey);
+    queue.push({ x: startX, y: startY });
 
-    if (grid[startY][startX].cable) {
-      queue.push({ x: startX, y: startY });
-    } else {
-      const dirs = [{ dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }];
-      for (const d of dirs) {
-        const nx = startX + d.dx;
-        const ny = startY + d.dy;
-        if (nx >= 0 && nx < width && ny >= 0 && ny < height && grid[ny][nx].cable) {
-          const nKey = `${nx},${ny}`;
-          visited.add(nKey);
-          parent.set(nKey, { x: startX, y: startY });
-          queue.push({ x: nx, y: ny });
-        }
-      }
-    }
+    const dirs = [{ dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }];
 
     let endPt: { x: number; y: number } | null = null;
     while (queue.length > 0) {
@@ -273,13 +328,14 @@ export class EnergyNetworkEngine {
       }
       if (endPt) break;
 
-      const dirs = [{ dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }];
       for (const d of dirs) {
         const nx = curr.x + d.dx;
         const ny = curr.y + d.dy;
         const nKey = `${nx},${ny}`;
         if (nx >= 0 && nx < width && ny >= 0 && ny < height && !visited.has(nKey)) {
-          if (grid[ny][nx].cable) {
+          const isDZ = targetDemandZone.cells.some(c => c.x === nx && c.y === ny);
+          const isConduit = this.isConduitOrCable(grid[ny][nx]);
+          if (isDZ || isConduit) {
             visited.add(nKey);
             parent.set(nKey, curr);
             queue.push({ x: nx, y: ny });

@@ -130,7 +130,7 @@ export const ObjectiveHUD: React.FC<ObjectiveHUDProps> = ({
           </div>
         )}
 
-        {evaluation.targetProfit && (
+        {evaluation.targetProfit !== undefined && (
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -140,7 +140,9 @@ export const ObjectiveHUD: React.FC<ObjectiveHUDProps> = ({
             <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
               {evaluation.currentProfit >= evaluation.targetProfit ? 'check_circle' : 'radio_button_unchecked'}
             </span>
-            <span>Operating Profit: ${evaluation.currentProfit} / ${evaluation.targetProfit}</span>
+            <span>
+              Operating Profit (24h): {evaluation.currentProfit >= 0 ? `$${evaluation.currentProfit}` : `-$${Math.abs(evaluation.currentProfit)}`} / ${evaluation.targetProfit}
+            </span>
           </div>
         )}
 

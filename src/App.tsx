@@ -26,6 +26,8 @@ import { LevelBriefingModal } from './components/levels/LevelBriefingModal.tsx';
 import { LevelCompleteModal } from './components/levels/LevelCompleteModal.tsx';
 import { LevelCampaignModal } from './components/levels/LevelCampaignModal.tsx';
 
+import { audioSystem } from './utils/audioSystem.ts';
+
 import './styles/index.css';
 
 export function App() {
@@ -39,6 +41,7 @@ export function App() {
   const [showCampaignModal, setShowCampaignModal] = useState<boolean>(false);
   const [showBriefingModal, setShowBriefingModal] = useState<boolean>(false);
   const [showVictoryModal, setShowVictoryModal] = useState<boolean>(false);
+  const [isLevelCompleted, setIsLevelCompleted] = useState<boolean>(false);
   const [starsEarned, setStarsEarned] = useState<number>(1);
 
   // Initial world state configured to Seed 42 by default (Section 39 Walkthrough world)
@@ -103,6 +106,7 @@ export function App() {
     setSelectedTool(null);
     setShowCampaignModal(false);
     setShowVictoryModal(false);
+    setIsLevelCompleted(false);
     setShowBriefingModal(true);
   }, []);
 
@@ -118,11 +122,26 @@ export function App() {
     }
   }, [currentLevelId, handleSelectLevel]);
 
+  // Helper to clone world state for React state immutability and wallet reactivity
+  const cloneState = (s: WorldState): WorldState => {
+    const currentCoins = s.player?.coins ?? s.economy.cash;
+    return {
+      ...s,
+      player: s.player ? { ...s.player, coins: currentCoins } : { coins: currentCoins, id: 1 },
+      economy: {
+        ...s.economy,
+        cash: currentCoins,
+        coins: currentCoins,
+        tickProfitHistory: [...(s.economy.tickProfitHistory || [])],
+      },
+    };
+  };
+
   // Step simulation tick
   const handleStepTick = useCallback(() => {
     if (!engineRef.current) return;
     const result = engineRef.current.step();
-    setWorldState({ ...result.state });
+    setWorldState(cloneState(result.state));
 
     // Check for recent critical events
     if (result.events.length > 0) {
@@ -137,19 +156,21 @@ export function App() {
     // Evaluate active level objectives
     setSustainedTicks(prevTicks => {
       const evalRes = LevelObjectives.evaluate(activeLevel, result.state, prevTicks);
-      if (evalRes.isCompleted && !showVictoryModal) {
+      if (evalRes.isCompleted && !isLevelCompleted) {
         const outcome = LevelProgress.recordCompletion(
           currentLevelId,
           evalRes.currentPowerKW,
           evalRes.currentProfit
         );
         setStarsEarned(outcome.starsEarned);
+        setIsLevelCompleted(true);
         setShowVictoryModal(true);
         setIsPlaying(false);
+        audioSystem.playVictorySound();
       }
       return evalRes.sustainedTicks;
     });
-  }, [selectedCell, activeLevel, currentLevelId, showVictoryModal]);
+  }, [selectedCell, activeLevel, currentLevelId, isLevelCompleted]);
 
   // Automated playback loop
   useEffect(() => {
@@ -228,23 +249,26 @@ export function App() {
         orientation: 180,
       });
 
-      setWorldState({ ...stepResult.state });
+      setWorldState(cloneState(stepResult.state));
       if (mode !== 'build') {
         setSelectedCell(stepResult.state.grid[cell.y][cell.x]);
       }
 
       if (stepResult.validationResult && !stepResult.validationResult.valid) {
+        const errorReason = stepResult.validationResult.errorReason || stepResult.validationResult.reason || 'Placement violates specification rules.';
+        audioSystem.playErrorSound();
         setActiveEvent({
           id: `evt-reject-${Date.now()}`,
           tick: stepResult.state.time.tick,
           type: 'PLACEMENT_REJECTED',
           severity: 'warning',
-          title: `Placement Rejected: ${selectedTool.type}`,
-          description: stepResult.validationResult.reason || 'Placement violates specification rules.',
+          title: `Cannot Place: ${errorReason}`,
+          description: stepResult.validationResult.reason || errorReason,
           location: { x: cell.x, y: cell.y },
         });
       } else {
-        // Trigger visual construction shockwave
+        // Trigger visual construction shockwave and audio SFX
+        audioSystem.playPlacementSound(selectedTool.type);
         setConstructionPulse({ x: cell.x, y: cell.y, time: performance.now() });
       }
     } else if (selectedTool.kind === 'overlay') {
@@ -255,11 +279,27 @@ export function App() {
         y: cell.y,
       });
 
-      setWorldState({ ...stepResult.state });
+      setWorldState(cloneState(stepResult.state));
       if (mode !== 'build') {
         setSelectedCell(stepResult.state.grid[cell.y][cell.x]);
       }
-      setConstructionPulse({ x: cell.x, y: cell.y, time: performance.now() });
+
+      if (stepResult.validationResult && !stepResult.validationResult.valid) {
+        const errorReason = stepResult.validationResult.errorReason || stepResult.validationResult.reason || 'Overlay violates rules.';
+        audioSystem.playErrorSound();
+        setActiveEvent({
+          id: `evt-reject-${Date.now()}`,
+          tick: stepResult.state.time.tick,
+          type: 'PLACEMENT_REJECTED',
+          severity: 'warning',
+          title: `Cannot Reinforce: ${errorReason}`,
+          description: stepResult.validationResult.reason || errorReason,
+          location: { x: cell.x, y: cell.y },
+        });
+      } else {
+        audioSystem.playOverlaySound();
+        setConstructionPulse({ x: cell.x, y: cell.y, time: performance.now() });
+      }
     }
   };
 
@@ -274,8 +314,9 @@ export function App() {
         y: pt.y,
       });
     }
+    audioSystem.playPlacementSound('Cable');
     const updated = engineRef.current.getSimulationState();
-    setWorldState({ ...updated });
+    setWorldState(cloneState(updated));
     if (path.length > 0) {
       const last = path[path.length - 1];
       setConstructionPulse({ x: last.x, y: last.y, time: performance.now() });
@@ -293,7 +334,7 @@ export function App() {
       y: cell.y,
       orientation: newAngle,
     });
-    setWorldState({ ...result.state });
+    setWorldState(cloneState(result.state));
     if (selectedCell && selectedCell.x === cell.x && selectedCell.y === cell.y) {
       setSelectedCell(result.state.grid[cell.y][cell.x]);
     }
@@ -321,7 +362,8 @@ export function App() {
       x: cell.x,
       y: cell.y,
     });
-    setWorldState({ ...result.state });
+    audioSystem.playDemolishSound();
+    setWorldState(cloneState(result.state));
     setSelectedCell(result.state.grid[cell.y][cell.x]);
   };
 
@@ -344,8 +386,9 @@ export function App() {
     setActiveEvent(perturbEvent);
     setFocusCoord(perturbEvent.location!);
 
+    audioSystem.playThunderSound();
     const result = engineRef.current.step();
-    setWorldState({ ...result.state });
+    setWorldState(cloneState(result.state));
     setActiveCausalTrace(CausalTracer.traceThermalSurgeToHydro(result.state));
   };
 
@@ -405,6 +448,10 @@ export function App() {
         isAIComparisonOpen={showAIComparison}
         onOpenCampaign={() => setShowCampaignModal(true)}
         activeLevelNumber={currentLevelId}
+        isLevelCompleted={isLevelCompleted}
+        onRestartLevel={handleRestartLevel}
+        onNextLevel={handleNextLevel}
+        currentLevelId={currentLevelId}
       />
 
       {/* 2. EVENT FEED (Top-Right Floating RimWorld-style Cards) */}
@@ -524,6 +571,9 @@ export function App() {
           onOpenCampaign={() => {
             setShowVictoryModal(false);
             setShowCampaignModal(true);
+          }}
+          onKeepViewing={() => {
+            setShowVictoryModal(false);
           }}
         />
       )}

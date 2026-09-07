@@ -20,31 +20,43 @@ export class LevelObjectives {
     // 1. Calculate active power
     let currentPowerKW = 0;
     if (level.requireGridConnection) {
-      // In grid-connected levels, only power delivered to demand zones counts
+      // In grid-connected levels, sum all power delivered to demand zones
       for (const zone of worldState.demandZones) {
         currentPowerKW += zone.deliveredEnergy;
       }
-      // If demand zone deliveredEnergy is 0 or less, fallback to sum of powerDelivered across cells
+      // If demand zone deliveredEnergy is 0 or less, fallback to accumulated totalDeliveredPower
       if (currentPowerKW === 0) {
-        for (let y = 0; y < worldState.height; y++) {
-          for (let x = 0; x < worldState.width; x++) {
-            currentPowerKW += worldState.grid[y][x].derived.powerDelivered;
+        if (worldState.totalDeliveredPower !== undefined && worldState.totalDeliveredPower > 0) {
+          currentPowerKW = worldState.totalDeliveredPower;
+        } else if (worldState.economy.totalDeliveredPower !== undefined && worldState.economy.totalDeliveredPower > 0) {
+          currentPowerKW = worldState.economy.totalDeliveredPower;
+        } else {
+          for (let y = 0; y < worldState.height; y++) {
+            for (let x = 0; x < worldState.width; x++) {
+              currentPowerKW += worldState.grid[y][x].derived.powerDelivered;
+            }
           }
         }
       }
     } else {
       // In early levels (1-5), all generation counts directly
-      for (let y = 0; y < worldState.height; y++) {
-        for (let x = 0; x < worldState.width; x++) {
-          currentPowerKW += worldState.grid[y][x].derived.powerGenerated;
+      if (worldState.totalGeneratedPower !== undefined && worldState.totalGeneratedPower > 0) {
+        currentPowerKW = worldState.totalGeneratedPower;
+      } else if (worldState.economy.totalGeneratedPower !== undefined && worldState.economy.totalGeneratedPower > 0) {
+        currentPowerKW = worldState.economy.totalGeneratedPower;
+      } else {
+        for (let y = 0; y < worldState.height; y++) {
+          for (let x = 0; x < worldState.width; x++) {
+            currentPowerKW += worldState.grid[y][x].derived.powerGenerated;
+          }
         }
       }
     }
 
     currentPowerKW = Math.round(currentPowerKW * 10) / 10;
 
-    // 2. Calculate profit
-    const currentProfit = Math.round(worldState.economy.cumulativeRevenue - worldState.economy.cumulativeCost);
+    // 2. Calculate profit (rolling 24-tick / 1-day sustained net operating rate)
+    const currentProfit = Math.round(worldState.economy.rollingDailyProfit ?? 0);
 
     // 3. Grid reliability
     const currentReliability = worldState.economy.reliabilityRatio;

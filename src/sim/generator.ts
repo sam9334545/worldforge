@@ -237,6 +237,8 @@ export class WorldGenerator {
         cumulativeDelivered: 884,
         cumulativeCurtailed: 0,
         reliabilityRatio: 1.0,
+        tickProfitHistory: [],
+        rollingDailyProfit: 0,
       },
       events: [
         {
@@ -385,14 +387,16 @@ export class WorldGenerator {
         ambientHumidity: profile.baseHumidity,
       },
       economy: {
-        cash: 30000,
-        netWorth: 30000,
+        cash: 100000,
+        netWorth: 100000,
         cumulativeRevenue: 0,
         cumulativeCost: 0,
         cumulativeGenerated: 0,
         cumulativeDelivered: 0,
         cumulativeCurtailed: 0,
         reliabilityRatio: 0,
+        tickProfitHistory: [],
+        rollingDailyProfit: 0,
       },
       events: [
         {

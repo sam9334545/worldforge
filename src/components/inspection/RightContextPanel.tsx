@@ -158,8 +158,11 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
               <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }} className="tabular-nums">
                 ${worldState.economy.cash.toFixed(2)}
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--tertiary)', marginTop: '2px' }} className="tabular-nums">
-                Net Worth: ${worldState.economy.netWorth.toFixed(2)}
+              <div style={{ fontSize: '11px', color: 'var(--tertiary)', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }} className="tabular-nums">
+                <span>Net Worth: ${worldState.economy.netWorth.toFixed(2)}</span>
+                <span style={{ color: (worldState.economy.rollingDailyProfit ?? 0) >= 0 ? '#3fb950' : '#f85149', fontWeight: 600 }}>
+                  24h Rate: {(worldState.economy.rollingDailyProfit ?? 0) >= 0 ? `+$${(worldState.economy.rollingDailyProfit ?? 0).toFixed(2)}` : `-$${Math.abs(worldState.economy.rollingDailyProfit ?? 0).toFixed(2)}`}/day
+                </span>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '12px', fontSize: '11px' }} className="tabular-nums">

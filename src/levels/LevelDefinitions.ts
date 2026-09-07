@@ -269,9 +269,9 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'water', 'cloud', 'snow', 'energy'],
     requireGridConnection: true,
     objective: {
-      description: 'Deliver 3,000 kW and generate at least $5,000 in net operating profit.',
+      description: 'Deliver 3,000 kW and sustain at least $1,500/day in net operating profit.',
       targetPowerKW: 3000,
-      minProfit: 5000,
+      minProfit: 1500,
       requiredSustainedTicks: 12
     },
     defaultSeason: 'Spring'
@@ -300,10 +300,10 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'water', 'cloud', 'snow', 'energy', 'ai'],
     requireGridConnection: true,
     objective: {
-      description: 'Deliver 3,500 kW, sustain 90%+ grid reliability, and accumulate $10,000 profit on an unfamiliar map.',
+      description: 'Deliver 3,500 kW, sustain 90%+ grid reliability, and maintain $2,000/day operating profit on an unfamiliar map.',
       targetPowerKW: 3500,
       minReliability: 0.90,
-      minProfit: 10000,
+      minProfit: 2000,
       requiredSustainedTicks: 15
     },
     defaultSeason: 'Summer'

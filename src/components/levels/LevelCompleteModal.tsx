@@ -8,6 +8,7 @@ interface LevelCompleteModalProps {
   onNextLevel: () => void;
   onReplayLevel: () => void;
   onOpenCampaign: () => void;
+  onKeepViewing: () => void;
 }
 
 export const LevelCompleteModal: React.FC<LevelCompleteModalProps> = ({
@@ -16,7 +17,8 @@ export const LevelCompleteModal: React.FC<LevelCompleteModalProps> = ({
   starsEarned,
   onNextLevel,
   onReplayLevel,
-  onOpenCampaign
+  onOpenCampaign,
+  onKeepViewing
 }) => {
   return (
     <div style={{
@@ -32,7 +34,7 @@ export const LevelCompleteModal: React.FC<LevelCompleteModalProps> = ({
     }}>
       <div style={{
         width: '100%',
-        maxWidth: '500px',
+        maxWidth: '520px',
         backgroundColor: 'var(--surface-elevated)',
         border: '1px solid rgba(63, 185, 80, 0.4)',
         borderRadius: 'var(--radius-xl)',
@@ -117,9 +119,17 @@ export const LevelCompleteModal: React.FC<LevelCompleteModalProps> = ({
               borderRadius: 'var(--radius-md)',
               border: '1px solid var(--border-subtle)'
             }}>
-              <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Net Profit</div>
-              <div style={{ fontSize: '16px', fontWeight: 800, color: '#3fb950', marginTop: '4px' }} className="tabular-nums">
-                ${evaluation.currentProfit}
+              <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Daily Profit (24h)</div>
+              <div
+                style={{
+                  fontSize: '16px',
+                  fontWeight: 800,
+                  color: evaluation.currentProfit >= 0 ? '#3fb950' : '#f85149',
+                  marginTop: '4px'
+                }}
+                className="tabular-nums"
+              >
+                {evaluation.currentProfit >= 0 ? `$${evaluation.currentProfit}` : `-$${Math.abs(evaluation.currentProfit)}`}
               </div>
             </div>
 
@@ -149,43 +159,75 @@ export const LevelCompleteModal: React.FC<LevelCompleteModalProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: '10px'
+          gap: '8px',
+          flexWrap: 'wrap'
         }}>
           <button
             onClick={onOpenCampaign}
             style={{
-              padding: '8px 14px',
-              fontSize: '12px',
+              padding: '8px 12px',
+              fontSize: '11.5px',
               fontWeight: 600,
               borderRadius: 'var(--radius-md)',
-              color: 'var(--text-secondary)'
+              color: 'var(--text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
             }}
           >
-            Campaign Map
+            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>map</span>
+            <span>Campaign</span>
           </button>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              onClick={onKeepViewing}
+              style={{
+                padding: '8px 12px',
+                fontSize: '11.5px',
+                fontWeight: 600,
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                border: '1px solid rgba(56, 189, 248, 0.4)',
+                color: 'var(--cyan-bright)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: 'pointer'
+              }}
+              title="Keep viewing and inspecting current grid without resetting"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>visibility</span>
+              <span>Keep Viewing</span>
+            </button>
+
             <button
               onClick={onReplayLevel}
               style={{
-                padding: '8px 14px',
-                fontSize: '12px',
+                padding: '8px 12px',
+                fontSize: '11.5px',
                 fontWeight: 600,
                 borderRadius: 'var(--radius-md)',
                 backgroundColor: 'var(--surface-elevated)',
                 border: '1px solid var(--border-subtle)',
-                color: 'var(--text-primary)'
+                color: 'var(--text-primary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: 'pointer'
               }}
+              title="Restart Level with clean initial grid and reset funds"
             >
-              Replay
+              <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>restart_alt</span>
+              <span>Restart</span>
             </button>
 
             {level.id < 10 && (
               <button
                 onClick={onNextLevel}
                 style={{
-                  padding: '10px 20px',
-                  fontSize: '12.5px',
+                  padding: '9px 16px',
+                  fontSize: '12px',
                   fontWeight: 700,
                   backgroundColor: '#3fb950',
                   color: '#05070a',
@@ -193,11 +235,12 @@ export const LevelCompleteModal: React.FC<LevelCompleteModalProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  boxShadow: '0 0 16px rgba(63, 185, 80, 0.4)'
+                  boxShadow: '0 0 16px rgba(63, 185, 80, 0.4)',
+                  cursor: 'pointer'
                 }}
               >
-                <span>NEXT SECTOR</span>
-                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>arrow_forward</span>
+                <span>NEXT LEVEL</span>
+                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>arrow_forward</span>
               </button>
             )}
           </div>

@@ -3,6 +3,7 @@ import type { CellState } from '../../sim/types.ts';
 import type { WorldState } from '../../sim/contracts/WorldState.ts';
 import type { SelectedBuildTool, InteractionMode } from '../ui/BottomControlDock.tsx';
 import { PlacementEngine } from '../../sim/rules.ts';
+import { MACHINE_CONFIGS } from '../../sim/constants.ts';
 import { EnergyNetworkEngine } from '../../sim/energy/network.ts';
 import type { XRayLayer } from './XRayControls.tsx';
 import type { LevelId } from '../../levels/LevelConfig.ts';
@@ -785,6 +786,38 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           ctx.lineWidth = isSelected ? 2.5 : (isHovered ? 1.8 : 0.85);
           ctx.stroke();
 
+          // Demand Zone Intake Ground Terminal Highlight
+          const activeDemandZoneOnCell = worldState.demandZones?.find(dz =>
+            dz.cells?.some(c => c.x === x && c.y === y)
+          );
+          if (activeDemandZoneOnCell) {
+            const pulse = (Math.sin(timestamp * 0.005 + x * 0.5 + y * 0.5) + 1) / 2;
+            ctx.save();
+
+            // High-visibility glowing intake surface
+            ctx.fillStyle = `rgba(56, 189, 248, ${0.25 + pulse * 0.15})`;
+            ctx.fill();
+
+            // Glowing boundary stroke
+            ctx.strokeStyle = `rgba(56, 189, 248, ${0.85 + pulse * 0.15})`;
+            ctx.lineWidth = 2.8;
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 10 + pulse * 8;
+            ctx.stroke();
+
+            // Crosshatch / intake terminal lines on ground
+            ctx.strokeStyle = `rgba(255, 255, 255, ${0.35 + pulse * 0.25})`;
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(pt.x - tileWidth / 4, pt.y);
+            ctx.lineTo(pt.x, pt.y - tileHeight / 4);
+            ctx.moveTo(pt.x, pt.y + tileHeight / 4);
+            ctx.lineTo(pt.x + tileWidth / 4, pt.y);
+            ctx.stroke();
+
+            ctx.restore();
+          }
+
           // C. Visible Terrain Reinforcement Overlays (Distinguishable without opening inspector)
           if (cell.overlays.includes('Gravel')) {
             // Visible Gravel Aggregate Ballast
@@ -1205,6 +1238,30 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
               ctx.fill();
             }
 
+            // Demand Target Overhead Callout Pill
+            const pulseAlpha = (Math.sin(timestamp * 0.006 + x + y) + 1) / 2;
+            const badgeText = `⚡ DEMAND [${x},${y}]`;
+            const subText = `${activeDemandZone?.deliveredEnergy || 0}/${activeDemandZone?.demandLevel || 0} kW`;
+            
+            ctx.font = 'bold 8.5px system-ui, sans-serif';
+            const bWidth = Math.max(ctx.measureText(badgeText).width, ctx.measureText(subText).width) + 10;
+            
+            ctx.fillStyle = 'rgba(10, 15, 28, 0.9)';
+            ctx.strokeStyle = isPowered ? 'rgba(63, 185, 80, 0.95)' : `rgba(56, 189, 248, ${0.75 + pulseAlpha * 0.25})`;
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.roundRect(-bWidth / 2, -62, bWidth, 22, 4);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = isPowered ? '#3fb950' : '#79c0ff';
+            ctx.textAlign = 'center';
+            ctx.fillText(badgeText, 0, -52);
+
+            ctx.font = '7.5px system-ui, sans-serif';
+            ctx.fillStyle = '#c9d1d9';
+            ctx.fillText(subText, 0, -43);
+
             ctx.restore();
           }
 
@@ -1414,56 +1471,57 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       // ----------------------------------------------------
       // SEQUENTIAL CABLE PATH ENERGY PULSE TRAVERSAL (Section 18)
       // ----------------------------------------------------
-      const demandZone = worldState.demandZones[0];
-      if (demandZone) {
+      if (worldState.demandZones && worldState.demandZones.length > 0) {
         ctx.save();
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
             const cell = grid[y][x];
             if (cell.machine && cell.derived.powerDelivered > 0) {
               const pDeliv = cell.derived.powerDelivered;
-              // Find sequential cable path connecting generator to demand zone
-              const cableRoute = EnergyNetworkEngine.findCablePath(x, y, grid, width, height, demandZone);
+              // Check all active demand zones to find connected cable route
+              for (const demandZone of worldState.demandZones) {
+                const cableRoute = EnergyNetworkEngine.findCablePath(x, y, grid, width, height, demandZone);
 
-              if (cableRoute && cableRoute.length >= 2) {
-                // Draw connected cable path segments
-                ctx.strokeStyle = activeXRayLayer === 'network' ? 'rgba(0, 229, 255, 0.85)' : 'rgba(56, 139, 253, 0.55)';
-                ctx.lineWidth = 2.2;
-                ctx.beginPath();
-                for (let seg = 0; seg < cableRoute.length; seg++) {
-                  const segPt = cableRoute[seg];
-                  const segCell = grid[segPt.y]?.[segPt.x];
-                  const segElev = segCell?.baseTerrain.elevation ?? 0;
-                  const segIso = gridToIso(segPt.x, segPt.y, segElev);
-                  if (seg === 0) ctx.moveTo(segIso.x, segIso.y - 6);
-                  else ctx.lineTo(segIso.x, segIso.y);
-                }
-                ctx.stroke();
-
-                // Animate glowing energy pulse traversing sequential segments
-                const totalSegments = cableRoute.length - 1;
-                const pathProgress = ((timestamp * 0.0025 * (pDeliv / 100)) % 1) * totalSegments;
-                const currSegmentIndex = Math.min(totalSegments - 1, Math.floor(pathProgress));
-                const segmentFrac = pathProgress - currSegmentIndex;
-
-                const p0 = cableRoute[currSegmentIndex];
-                const p1 = cableRoute[currSegmentIndex + 1];
-                const c0 = grid[p0.y]?.[p0.x];
-                const c1 = grid[p1.y]?.[p1.x];
-                if (c0 && c1) {
-                  const iso0 = gridToIso(p0.x, p0.y, c0.baseTerrain.elevation);
-                  const iso1 = gridToIso(p1.x, p1.y, c1.baseTerrain.elevation);
-                  const pulseX = iso0.x + (iso1.x - iso0.x) * segmentFrac;
-                  const pulseY = (iso0.y - (currSegmentIndex === 0 ? 6 : 0)) + (iso1.y - (iso0.y - (currSegmentIndex === 0 ? 6 : 0))) * segmentFrac;
-
-                  const glowGrad = ctx.createRadialGradient(pulseX, pulseY, 1, pulseX, pulseY, 9);
-                  glowGrad.addColorStop(0, '#ffffff');
-                  glowGrad.addColorStop(0.4, '#79c0ff');
-                  glowGrad.addColorStop(1, 'rgba(56, 139, 253, 0)');
-                  ctx.fillStyle = glowGrad;
+                if (cableRoute && cableRoute.length >= 2) {
+                  // Draw connected cable path segments
+                  ctx.strokeStyle = activeXRayLayer === 'network' ? 'rgba(0, 229, 255, 0.85)' : 'rgba(56, 139, 253, 0.55)';
+                  ctx.lineWidth = 2.2;
                   ctx.beginPath();
-                  ctx.arc(pulseX, pulseY, 9, 0, Math.PI * 2);
-                  ctx.fill();
+                  for (let seg = 0; seg < cableRoute.length; seg++) {
+                    const segPt = cableRoute[seg];
+                    const segCell = grid[segPt.y]?.[segPt.x];
+                    const segElev = segCell?.baseTerrain.elevation ?? 0;
+                    const segIso = gridToIso(segPt.x, segPt.y, segElev);
+                    if (seg === 0) ctx.moveTo(segIso.x, segIso.y - 6);
+                    else ctx.lineTo(segIso.x, segIso.y);
+                  }
+                  ctx.stroke();
+
+                  // Animate glowing energy pulse traversing sequential segments
+                  const totalSegments = cableRoute.length - 1;
+                  const pathProgress = ((timestamp * 0.0025 * (pDeliv / 100)) % 1) * totalSegments;
+                  const currSegmentIndex = Math.min(totalSegments - 1, Math.floor(pathProgress));
+                  const segmentFrac = pathProgress - currSegmentIndex;
+
+                  const p0 = cableRoute[currSegmentIndex];
+                  const p1 = cableRoute[currSegmentIndex + 1];
+                  const c0 = grid[p0.y]?.[p0.x];
+                  const c1 = grid[p1.y]?.[p1.x];
+                  if (c0 && c1) {
+                    const iso0 = gridToIso(p0.x, p0.y, c0.baseTerrain.elevation);
+                    const iso1 = gridToIso(p1.x, p1.y, c1.baseTerrain.elevation);
+                    const pulseX = iso0.x + (iso1.x - iso0.x) * segmentFrac;
+                    const pulseY = (iso0.y - (currSegmentIndex === 0 ? 6 : 0)) + (iso1.y - (iso0.y - (currSegmentIndex === 0 ? 6 : 0))) * segmentFrac;
+
+                    const glowGrad = ctx.createRadialGradient(pulseX, pulseY, 1, pulseX, pulseY, 9);
+                    glowGrad.addColorStop(0, '#ffffff');
+                    glowGrad.addColorStop(0.4, '#79c0ff');
+                    glowGrad.addColorStop(1, 'rgba(56, 139, 253, 0)');
+                    ctx.fillStyle = glowGrad;
+                    ctx.beginPath();
+                    ctx.arc(pulseX, pulseY, 9, 0, Math.PI * 2);
+                    ctx.fill();
+                  }
                 }
               }
             }
@@ -1742,11 +1800,18 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
           const pt = gridToIso(hoveredCell.x, hoveredCell.y, cell.baseTerrain.elevation);
 
           if (buildTool) {
+            const toolCost = buildTool.kind === 'machine'
+              ? (MACHINE_CONFIGS[buildTool.type]?.buildCost ?? 5000)
+              : (buildTool.type === 'Gravel' ? 500 : 1000);
+            const canAfford = worldState.economy.cash >= toolCost;
+            const isWater = cell.baseTerrain.id === 'T06' || cell.dynamic.waterBodyType === 'RIVER' || (cell.dynamic.surfaceWater ?? 0) > 0;
+            const isHydroOnNonWater = buildTool.kind === 'machine' && buildTool.type === 'HydroTurbine' && !isWater;
+
             const validation = buildTool.kind === 'machine'
               ? PlacementEngine.canPlace(buildTool.type, cell, worldState)
               : PlacementEngine.canReinforce(buildTool.type, cell);
 
-            const isValid = validation.valid;
+            const isValid = validation.valid && canAfford && !isHydroOnNonWater;
             const ghostFill = isValid ? 'rgba(46, 160, 67, 0.45)' : 'rgba(248, 81, 73, 0.45)';
             const ghostStroke = isValid ? '#3fb950' : '#f85149';
 
@@ -1765,6 +1830,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
             const telemetryLines: string[] = [];
             if (buildTool.kind === 'machine') {
               if (buildTool.type === 'LandSolar') {
+                telemetryLines.push(`• Cost: $${toolCost.toLocaleString()} | Cash: $${Math.max(0, Math.floor(worldState.economy.cash)).toLocaleString()}`);
                 telemetryLines.push(`• Exposure: ${Math.round(cell.dynamic.effectiveIrradiance / 10)}% | Clouds: ${Math.round((1 - cell.dynamic.cloudAttenuation) * 100)}%`);
                 telemetryLines.push(`• Stability: ${cell.derived.effectiveStability.toFixed(2)} (Req >= 0.70)`);
                 telemetryLines.push(`• Est Output: ~${Math.round(cell.dynamic.effectiveIrradiance * 0.22)} kW`);
@@ -1779,29 +1845,32 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
                   }
                 }
                 const estWindKW = Math.round(Math.min(500, 0.5 * 1.225 * 50 * Math.pow(cell.dynamic.windSpeed, 3) * 0.45 * 0.001));
+                telemetryLines.push(`• Cost: $${toolCost.toLocaleString()} | Cash: $${Math.max(0, Math.floor(worldState.economy.cash)).toLocaleString()}`);
                 telemetryLines.push(`• Wind: ${cell.dynamic.windSpeed.toFixed(1)} m/s | Bearing: ${Math.round(cell.dynamic.windDirection)}°`);
                 telemetryLines.push(`• Clearance: ${minTurbDist !== null ? `${minTurbDist.toFixed(1)} cells (Req >= 2.0)` : 'Clear'}`);
                 telemetryLines.push(`• Est Output: ~${estWindKW} kW`);
               } else if (buildTool.type === 'HydroTurbine') {
                 const flowQ = cell.dynamic.flowRateQ || 0;
                 const estHydro = flowQ >= 2 ? Math.round(1000 * 9.81 * flowQ * 4 * 0.85 * 0.001) : 0;
+                telemetryLines.push(`• Cost: $${toolCost.toLocaleString()} | Cash: $${Math.max(0, Math.floor(worldState.economy.cash)).toLocaleString()}`);
                 telemetryLines.push(`• River Flow Q: ${flowQ.toFixed(1)} m³/s (Req >= 1.0)`);
                 telemetryLines.push(`• Velocity: ${cell.dynamic.velocity?.toFixed(2) ?? '0.00'} m/s`);
                 telemetryLines.push(`• Est Output: ~${estHydro} kW`);
               } else if (buildTool.type === 'Cable') {
-                telemetryLines.push(`• Substrate: ${cell.baseTerrain.name} | Cost: $100`);
+                telemetryLines.push(`• Substrate: ${cell.baseTerrain.name} | Cost: $200`);
                 telemetryLines.push(`• Drag or click path to connect generators to grid`);
               }
             } else {
               const projectedStab = cell.derived.effectiveStability + (buildTool.type === 'Gravel' ? 0.25 : 0.40);
+              telemetryLines.push(`• Cost: $${toolCost.toLocaleString()} | Cash: $${Math.max(0, Math.floor(worldState.economy.cash)).toLocaleString()}`);
               telemetryLines.push(`• Terrain Stability: ${cell.derived.effectiveStability.toFixed(2)} → ${projectedStab.toFixed(2)}`);
-              telemetryLines.push(`• Substrate: ${cell.baseTerrain.name} | Cost: $500`);
+              telemetryLines.push(`• Substrate: ${cell.baseTerrain.name}`);
             }
 
             const tipX = pt.x + 36;
             const tipY = pt.y - 75;
-            const boxWidth = 240;
-            const baseHeight = isValid ? 42 + telemetryLines.length * 15 : 68;
+            const boxWidth = 248;
+            const baseHeight = isValid ? 44 + telemetryLines.length * 15 : 68;
 
             ctx.fillStyle = 'rgba(10, 14, 22, 0.95)';
             ctx.strokeStyle = ghostStroke;
@@ -1811,10 +1880,22 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
             ctx.fill();
             ctx.stroke();
 
+            // Tooltip header determination
+            let headerText = '';
+            if (!canAfford) {
+              headerText = 'CANNOT PLACE: Insufficient Funds';
+            } else if (isHydroOnNonWater) {
+              headerText = 'CANNOT PLACE: Requires Water';
+            } else if (!validation.valid) {
+              headerText = `CANNOT PLACE ${buildTool.type.toUpperCase()}`;
+            } else {
+              headerText = `✓ CAN PLACE ${buildTool.type.toUpperCase()}`;
+            }
+
             ctx.fillStyle = ghostStroke;
             ctx.font = '700 11px Inter, sans-serif';
             ctx.textAlign = 'left';
-            ctx.fillText(isValid ? `✓ CAN PLACE ${buildTool.type.toUpperCase()}` : `✕ CANNOT PLACE ${buildTool.type.toUpperCase()}`, tipX + 10, tipY + 16);
+            ctx.fillText(headerText, tipX + 10, tipY + 16);
 
             if (isValid) {
               ctx.fillStyle = '#c9d1d9';
@@ -1825,7 +1906,15 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
             } else {
               ctx.fillStyle = '#ffb4ab';
               ctx.font = '9.5px Inter, sans-serif';
-              const reason = validation.reason || 'Placement invalid.';
+              let reason = '';
+              if (!canAfford) {
+                reason = `Insufficient funds: Needs $${toolCost.toLocaleString()} (Have: $${Math.max(0, Math.floor(worldState.economy.cash)).toLocaleString()}).`;
+              } else if (isHydroOnNonWater) {
+                reason = 'Hydro Turbine requires a Water/River cell.';
+              } else {
+                reason = validation.errorReason || validation.reason || 'Placement invalid.';
+              }
+
               const words = reason.split(' ');
               let line1 = '';
               let line2 = '';
@@ -1988,6 +2077,9 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
   const handleMouseUp = () => {
     isDragging.current = false;
     isCableDragging.current = false;
+    if (cablePath.length === 1) {
+      setCablePath([]);
+    }
   };
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1996,7 +2088,8 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       return;
     }
 
-    if (buildTool?.type === 'Cable') {
+    const isConduit = buildTool?.type === 'Cable' || (buildTool?.type as string) === 'Conduit';
+    if (isConduit && cablePath.length > 1) {
       return;
     }
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -2005,8 +2098,25 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     if (pos) {
       const cell = grid[pos.y][pos.x];
       if (buildTool && onBuild) {
+        const toolCost = buildTool.kind === 'machine'
+          ? (isConduit ? 100 : (MACHINE_CONFIGS[buildTool.type]?.buildCost ?? 5000))
+          : (buildTool.type === 'Gravel' ? 500 : 1000);
+        const canAfford = worldState.economy.cash >= toolCost;
+        const isWater = cell.baseTerrain.id === 'T06' || cell.dynamic.waterBodyType === 'RIVER' || (cell.dynamic.surfaceWater ?? 0) > 0;
+        const isHydroOnNonWater = buildTool.kind === 'machine' && buildTool.type === 'HydroTurbine' && !isWater;
+
+        const validation = buildTool.kind === 'machine'
+          ? PlacementEngine.canPlace(buildTool.type, cell, worldState)
+          : PlacementEngine.canReinforce(buildTool.type, cell);
+
+        const isAllowed = validation.valid && canAfford && !isHydroOnNonWater;
+
         onBuild(cell);
-        audioSystem.playPlacementSound();
+        if (isAllowed) {
+          audioSystem.playPlacementSound(buildTool.type);
+        } else {
+          audioSystem.playErrorSound();
+        }
       } else {
         onSelectCell(cell);
       }
@@ -2015,11 +2125,22 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
     }
   };
 
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.88;
-    targetZoom.current = Math.min(2.8, Math.max(0.6, targetZoom.current * zoomFactor));
-  };
+  // Non-passive wheel listener attached directly to canvas DOM element to prevent browser warnings
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.88;
+      targetZoom.current = Math.min(2.8, Math.max(0.6, targetZoom.current * zoomFactor));
+    };
+
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      canvas.removeEventListener('wheel', onWheel);
+    };
+  }, []);
 
   const handleResetCamera = () => {
     targetZoom.current = 1.35;
@@ -2034,7 +2155,6 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onClick={handleClick}
-        onWheel={handleWheel}
         style={{
           width: '100%',
           height: '100%',

@@ -11,6 +11,7 @@ export interface ValidationResult {
   valid: boolean;
   failedCheckIndex?: number;    // 1 to 8 (Section 15 sequence)
   reason?: string;              // Human-readable rejection reason
+  errorReason?: string;         // Specific error reason for notifications and UI toasts
   firstFailingRule?: string;    // e.g. 'RULE-PLACE-003'
 }
 

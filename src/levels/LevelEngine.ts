@@ -109,6 +109,8 @@ export class LevelEngine {
     baseWorld.economy.cumulativeDelivered = 0;
     baseWorld.economy.cumulativeCurtailed = 0;
     baseWorld.economy.reliabilityRatio = 1.0;
+    baseWorld.economy.tickProfitHistory = [];
+    baseWorld.economy.rollingDailyProfit = 0;
 
     // 5. Initial Event
     baseWorld.events = [

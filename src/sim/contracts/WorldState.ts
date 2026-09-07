@@ -9,6 +9,12 @@
 import { CellState, CloudEntity, DemandZone, EconomyState, GlobalEnvironment, SimulationTime } from '../types.ts';
 import { SimulationEvent } from './SimulationEvent.ts';
 
+export interface PlayerStateContract {
+  player_id?: number;
+  id?: number;
+  coins: number;
+}
+
 export interface WorldState {
   time: SimulationTime;
   seed: number;
@@ -21,4 +27,8 @@ export interface WorldState {
   economy: EconomyState;
   events: SimulationEvent[];
   stateHash: string;            // Deterministic verification hash of current tick
+  player?: PlayerStateContract;
+  players?: PlayerStateContract[];
+  totalDeliveredPower?: number;
+  totalGeneratedPower?: number;
 }

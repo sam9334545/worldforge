@@ -12,6 +12,10 @@ interface TopHUDProps {
   isAIComparisonOpen?: boolean;
   onOpenCampaign?: () => void;
   activeLevelNumber?: number;
+  isLevelCompleted?: boolean;
+  onRestartLevel?: () => void;
+  onNextLevel?: () => void;
+  currentLevelId?: number;
 }
 
 export const TopHUD: React.FC<TopHUDProps> = ({
@@ -22,7 +26,11 @@ export const TopHUD: React.FC<TopHUDProps> = ({
   onToggleAIComparison,
   isAIComparisonOpen = false,
   onOpenCampaign,
-  activeLevelNumber
+  activeLevelNumber,
+  isLevelCompleted = false,
+  onRestartLevel,
+  onNextLevel,
+  currentLevelId = 1
 }) => {
   const { time, globalEnv, seed } = worldState;
   const [soundMuted, setSoundMuted] = useState<boolean>(() => audioSystem.getIsMuted());
@@ -42,6 +50,9 @@ export const TopHUD: React.FC<TopHUDProps> = ({
     }
   }
 
+  const currentCoins = worldState.player?.coins ?? worldState.economy.cash ?? 0;
+  const rollingProfit = worldState.economy.rollingDailyProfit ?? 0;
+
   return (
     <header style={{
       position: 'fixed',
@@ -56,9 +67,9 @@ export const TopHUD: React.FC<TopHUDProps> = ({
       gap: '12px',
       backgroundColor: 'rgba(10, 14, 22, 0.82)',
       backdropFilter: 'blur(16px)',
-      border: '1px solid var(--border-subtle)',
+      border: isLevelCompleted ? '1px solid rgba(63, 185, 80, 0.5)' : '1px solid var(--border-subtle)',
       borderRadius: 'var(--radius-lg)',
-      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
+      boxShadow: isLevelCompleted ? '0 8px 32px rgba(46, 160, 67, 0.25)' : '0 8px 32px rgba(0, 0, 0, 0.45)',
       zIndex: 50,
       userSelect: 'none'
     }}>
@@ -107,40 +118,132 @@ export const TopHUD: React.FC<TopHUDProps> = ({
         </div>
       </div>
 
-      {/* Center Live Simulation Telemetry Pill */}
+      {/* Center Live Simulation Telemetry & Player Wallet */}
       <div style={{
         display: 'flex',
-        flexDirection: 'column',
         alignItems: 'center',
-        gap: '4px'
+        gap: '10px'
       }}>
+        {/* Live Bank Funds / Wallet Pill */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '10px',
-          backgroundColor: 'var(--surface-container-lowest)',
-          padding: '4px 14px',
+          gap: '8px',
+          backgroundColor: 'rgba(15, 23, 42, 0.85)',
+          padding: '4px 12px',
           borderRadius: 'var(--radius-lg)',
-          border: '1px solid var(--border-subtle)',
-          fontSize: '11px'
-        }} className="tabular-nums">
-          <span style={{ color: 'var(--primary-bright)', fontWeight: 700 }}>TICK {time.tick}</span>
-          <span style={{ color: 'var(--border-subtle)' }}>•</span>
-          <span style={{ color: 'var(--text-primary)' }}>Day {time.day}</span>
-          <span style={{ color: 'var(--border-subtle)' }}>•</span>
-          <span style={{ color: 'var(--secondary)', fontWeight: 600 }}>{time.season}</span>
-          <span style={{ color: 'var(--border-subtle)' }}>•</span>
-          <span style={{ color: 'var(--text-primary)' }}>
-            Wind: {globalEnv.globalWindSpeed.toFixed(1)} m/s ({globalEnv.globalWindDirection}°)
+          border: '1px solid rgba(255, 215, 0, 0.35)',
+          boxShadow: '0 0 12px rgba(255, 215, 0, 0.12)'
+        }} className="tabular-nums" title="Player Bank Account Balance & Daily Operating Net Rate">
+          <span className="material-symbols-outlined" style={{ fontSize: '15px', color: '#ffd700' }}>
+            account_balance_wallet
           </span>
-          <span style={{ color: 'var(--border-subtle)' }}>•</span>
-          <span style={{ color: 'var(--warning-bright)' }}>{globalEnv.baseSolarIrradiance.toFixed(0)} W/m²</span>
-          <span style={{ color: 'var(--border-subtle)' }}>•</span>
-          <span style={{ color: 'var(--cyan-bright)' }}>Hydro {totalFlowQ.toFixed(1)} m³/s</span>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 800, color: '#ffffff', letterSpacing: '0.02em' }}>
+              ${currentCoins.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            <span style={{
+              fontSize: '10px',
+              fontWeight: 700,
+              color: rollingProfit >= 0 ? '#3fb950' : '#f85149'
+            }}>
+              {rollingProfit >= 0 ? '+' : '-'}${Math.abs(rollingProfit).toFixed(2)}/day
+            </span>
+          </div>
         </div>
 
+        {isLevelCompleted ? (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            backgroundColor: 'rgba(46, 160, 67, 0.2)',
+            border: '1px solid rgba(63, 185, 80, 0.5)',
+            padding: '3px 12px',
+            borderRadius: 'var(--radius-lg)'
+          }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '15px', color: '#3fb950' }}>check_circle</span>
+            <span style={{ fontSize: '11px', fontWeight: 800, color: '#3fb950', letterSpacing: '0.05em' }}>
+              SECTOR {currentLevelId} STABILIZED
+            </span>
+
+            {onRestartLevel && (
+              <button
+                onClick={onRestartLevel}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '2px 8px',
+                  backgroundColor: 'var(--surface-elevated)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-xs)',
+                  fontSize: '10.5px',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  marginLeft: '4px'
+                }}
+                title="Reset board to initial level state"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>restart_alt</span>
+                <span>Reset</span>
+              </button>
+            )}
+
+            {currentLevelId < 10 && onNextLevel && (
+              <button
+                onClick={onNextLevel}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '2px 10px',
+                  backgroundColor: '#3fb950',
+                  color: '#05070a',
+                  border: 'none',
+                  borderRadius: 'var(--radius-xs)',
+                  fontSize: '10.5px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 0 10px rgba(63, 185, 80, 0.4)'
+                }}
+                title="Proceed to next sector"
+              >
+                <span>Next Sector</span>
+                <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>arrow_forward</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            backgroundColor: 'var(--surface-container-lowest)',
+            padding: '4px 14px',
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--border-subtle)',
+            fontSize: '11px'
+          }} className="tabular-nums">
+            <span style={{ color: 'var(--primary-bright)', fontWeight: 700 }}>TICK {time.tick}</span>
+            <span style={{ color: 'var(--border-subtle)' }}>•</span>
+            <span style={{ color: 'var(--text-primary)' }}>Day {time.day}</span>
+            <span style={{ color: 'var(--border-subtle)' }}>•</span>
+            <span style={{ color: 'var(--secondary)', fontWeight: 600 }}>{time.season}</span>
+            <span style={{ color: 'var(--border-subtle)' }}>•</span>
+            <span style={{ color: 'var(--text-primary)' }}>
+              Wind: {globalEnv.globalWindSpeed.toFixed(1)} m/s ({globalEnv.globalWindDirection}°)
+            </span>
+            <span style={{ color: 'var(--border-subtle)' }}>•</span>
+            <span style={{ color: 'var(--warning-bright)' }}>{globalEnv.baseSolarIrradiance.toFixed(0)} W/m²</span>
+            <span style={{ color: 'var(--border-subtle)' }}>•</span>
+            <span style={{ color: 'var(--cyan-bright)' }}>Hydro {totalFlowQ.toFixed(1)} m³/s</span>
+          </div>
+        )}
+
         {/* Active Perturbation / Event Pill */}
-        {activeEvent && (
+        {activeEvent && !isLevelCompleted && (
           <div style={{
             display: 'flex',
             alignItems: 'center',
