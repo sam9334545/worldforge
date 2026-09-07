@@ -2,11 +2,18 @@
  * Authoritative Simulation-to-Visual Weather Adapter
  * Converts WorldState simulation dynamics (clouds, temperature, precipitation, wind)
  * into a clean, deterministic visual weather snapshot for the canvas renderer.
+ * 
+ * Strict Rule: Visual precipitation is 100% driven by active physical simulation precipitation.
+ * Calendar seasons, visual theme names, and ambient humidity never force precipitation particles
+ * when actual simulation precipitation intensity is zero.
  */
 
 import type { WorldState } from '../contracts/WorldState.ts';
 
+export type PrecipitationType = 'none' | 'rain' | 'snow';
+
 export interface VisualWeatherSnapshot {
+  precipitationType: PrecipitationType;
   isRaining: boolean;
   rainIntensity: number;     // 0.0 (none) to 1.0 (heavy downpour)
   isSnowing: boolean;
@@ -24,38 +31,48 @@ export interface VisualWeatherSnapshot {
  * Derives visual weather purely from authoritative WorldState simulation contracts
  */
 export function getVisualWeatherSnapshot(worldState: WorldState): VisualWeatherSnapshot {
-  const { globalEnv, clouds, time } = worldState;
-  const temp = globalEnv.ambientTemperature;
+  const { globalEnv, clouds } = worldState;
+  const temp = globalEnv.ambientTemperature ?? 20;
 
   // 1. Evaluate precipitation potential across active simulation clouds
-  let maxPrecipitation = 0;
+  let maxCloudPrecipitation = 0;
   let totalCloudDensity = 0;
 
   if (clouds && clouds.length > 0) {
     for (const cloud of clouds) {
-      maxPrecipitation = Math.max(maxPrecipitation, cloud.precipitationPotential || 0);
-      totalCloudDensity += cloud.cloudDensity || 0;
+      const precip = (cloud.precipitationPotential || 0) * (cloud.cloudDensity || 0);
+      maxCloudPrecipitation = Math.max(maxCloudPrecipitation, precip);
+      totalCloudDensity += (cloud.cloudDensity || 0);
     }
     totalCloudDensity = totalCloudDensity / clouds.length;
   }
 
-  // 2. Determine precipitation type and intensity based on physics
-  const hasPrecipitation = maxPrecipitation > 0.15 || globalEnv.ambientHumidity > 0.70;
-  const isBelowFreezing = temp <= 1.5;
+  // Check any explicit weather signal on worldState
+  const explicitPrecip = (worldState as any).weather?.precipitationIntensity ?? 0;
+  const precipitationIntensity = Math.max(explicitPrecip, maxCloudPrecipitation);
 
-  const isRaining = hasPrecipitation && !isBelowFreezing;
-  const rainIntensity = isRaining ? Math.min(1.0, Math.max(0.25, maxPrecipitation + (globalEnv.ambientHumidity - 0.5) * 0.5)) : 0;
+  // 2. Strict Simulation-Driven Weather Mapping (No calendar/theme overrides)
+  const hasActivePrecipitation = precipitationIntensity > 0;
+  const isBelowFreezing = temp <= 0.0;
 
-  const isSnowing = (hasPrecipitation || time.season === 'Winter') && isBelowFreezing;
-  const snowIntensity = isSnowing ? Math.min(1.0, Math.max(0.3, (2.0 - temp) * 0.15 + maxPrecipitation)) : 0;
+  const precipitationType: PrecipitationType = !hasActivePrecipitation
+    ? 'none'
+    : (isBelowFreezing ? 'snow' : 'rain');
 
-  const isStormy = maxPrecipitation > 0.45 && globalEnv.globalWindSpeed > 14.0;
+  const isRaining = precipitationType === 'rain';
+  const rainIntensity = isRaining ? Math.min(1.0, Math.max(0.15, precipitationIntensity)) : 0;
+
+  const isSnowing = precipitationType === 'snow';
+  const snowIntensity = isSnowing ? Math.min(1.0, Math.max(0.15, precipitationIntensity)) : 0;
+
+  const isStormy = hasActivePrecipitation && precipitationIntensity > 0.45 && globalEnv.globalWindSpeed > 14.0;
 
   // 3. Convert wind bearing to radians
   const windDirDeg = globalEnv.globalWindDirection || 0;
   const windDirectionRad = (windDirDeg * Math.PI) / 180;
 
   return {
+    precipitationType,
     isRaining,
     rainIntensity,
     isSnowing,

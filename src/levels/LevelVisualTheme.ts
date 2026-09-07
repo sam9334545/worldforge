@@ -1,5 +1,11 @@
 import type { LevelId } from './LevelConfig.ts';
 
+export interface VisualRenderingModifiers {
+  cloudDensityMultiplier: number;        // Multiplier for cloud visual density / opacity
+  precipitationParticleDensity: number;  // Multiplier for rain/snow particle visual rendering density
+  atmosphericDrama: number;              // Multiplier for lighting contrast and atmospheric depth
+}
+
 export interface LevelVisualTheme {
   id: LevelId;
   name: string;
@@ -8,12 +14,7 @@ export interface LevelVisualTheme {
   mountainDensity: number;
   vegetationDensity: number;
   riverPresence: boolean;
-  weatherProfile: {
-    cloudFrequency: number;
-    rainfallProbability: number;
-    snowProbability: number;
-    stormProbability: number;
-  };
+  renderingModifiers: VisualRenderingModifiers;
   visualAtmosphere: {
     fog: number;
     lighting: 'warm_sun' | 'golden_winds' | 'rocky_dusk' | 'high_noon' | 'river_shimmer' | 'storm_indigo' | 'alpine_frost' | 'winter_ice' | 'electric_azure' | 'dynamic_frontier';
@@ -36,11 +37,10 @@ export const LEVEL_VISUAL_THEMES: Record<LevelId, LevelVisualTheme> = {
     mountainDensity: 0.35,
     vegetationDensity: 0.75,
     riverPresence: true,
-    weatherProfile: {
-      cloudFrequency: 0.15,
-      rainfallProbability: 0.05,
-      snowProbability: 0.0,
-      stormProbability: 0.0,
+    renderingModifiers: {
+      cloudDensityMultiplier: 0.85,
+      precipitationParticleDensity: 0.9,
+      atmosphericDrama: 0.85,
     },
     visualAtmosphere: {
       fog: 0.08,
@@ -62,11 +62,10 @@ export const LEVEL_VISUAL_THEMES: Record<LevelId, LevelVisualTheme> = {
     mountainDensity: 0.25,
     vegetationDensity: 0.65,
     riverPresence: true,
-    weatherProfile: {
-      cloudFrequency: 0.35,
-      rainfallProbability: 0.15,
-      snowProbability: 0.0,
-      stormProbability: 0.05,
+    renderingModifiers: {
+      cloudDensityMultiplier: 1.0,
+      precipitationParticleDensity: 1.0,
+      atmosphericDrama: 1.0,
     },
     visualAtmosphere: {
       fog: 0.12,
@@ -88,11 +87,10 @@ export const LEVEL_VISUAL_THEMES: Record<LevelId, LevelVisualTheme> = {
     mountainDensity: 0.65,
     vegetationDensity: 0.45,
     riverPresence: true,
-    weatherProfile: {
-      cloudFrequency: 0.3,
-      rainfallProbability: 0.1,
-      snowProbability: 0.05,
-      stormProbability: 0.05,
+    renderingModifiers: {
+      cloudDensityMultiplier: 1.1,
+      precipitationParticleDensity: 1.0,
+      atmosphericDrama: 1.2,
     },
     visualAtmosphere: {
       fog: 0.18,
@@ -114,11 +112,10 @@ export const LEVEL_VISUAL_THEMES: Record<LevelId, LevelVisualTheme> = {
     mountainDensity: 0.3,
     vegetationDensity: 0.5,
     riverPresence: false,
-    weatherProfile: {
-      cloudFrequency: 0.1,
-      rainfallProbability: 0.02,
-      snowProbability: 0.0,
-      stormProbability: 0.0,
+    renderingModifiers: {
+      cloudDensityMultiplier: 0.75,
+      precipitationParticleDensity: 0.8,
+      atmosphericDrama: 0.9,
     },
     visualAtmosphere: {
       fog: 0.05,
@@ -140,11 +137,10 @@ export const LEVEL_VISUAL_THEMES: Record<LevelId, LevelVisualTheme> = {
     mountainDensity: 0.4,
     vegetationDensity: 0.85,
     riverPresence: true,
-    weatherProfile: {
-      cloudFrequency: 0.3,
-      rainfallProbability: 0.25,
-      snowProbability: 0.0,
-      stormProbability: 0.08,
+    renderingModifiers: {
+      cloudDensityMultiplier: 1.05,
+      precipitationParticleDensity: 1.1,
+      atmosphericDrama: 1.0,
     },
     visualAtmosphere: {
       fog: 0.15,
@@ -166,11 +162,10 @@ export const LEVEL_VISUAL_THEMES: Record<LevelId, LevelVisualTheme> = {
     mountainDensity: 0.45,
     vegetationDensity: 0.6,
     riverPresence: true,
-    weatherProfile: {
-      cloudFrequency: 0.55,
-      rainfallProbability: 0.4,
-      snowProbability: 0.05,
-      stormProbability: 0.25,
+    renderingModifiers: {
+      cloudDensityMultiplier: 1.25,
+      precipitationParticleDensity: 1.2,
+      atmosphericDrama: 1.35,
     },
     visualAtmosphere: {
       fog: 0.25,
@@ -192,11 +187,10 @@ export const LEVEL_VISUAL_THEMES: Record<LevelId, LevelVisualTheme> = {
     mountainDensity: 0.8,
     vegetationDensity: 0.35,
     riverPresence: true,
-    weatherProfile: {
-      cloudFrequency: 0.4,
-      rainfallProbability: 0.2,
-      snowProbability: 0.25,
-      stormProbability: 0.15,
+    renderingModifiers: {
+      cloudDensityMultiplier: 1.2,
+      precipitationParticleDensity: 1.15,
+      atmosphericDrama: 1.3,
     },
     visualAtmosphere: {
       fog: 0.22,
@@ -218,11 +212,10 @@ export const LEVEL_VISUAL_THEMES: Record<LevelId, LevelVisualTheme> = {
     mountainDensity: 0.7,
     vegetationDensity: 0.4,
     riverPresence: true,
-    weatherProfile: {
-      cloudFrequency: 0.5,
-      rainfallProbability: 0.1,
-      snowProbability: 0.6,
-      stormProbability: 0.2,
+    renderingModifiers: {
+      cloudDensityMultiplier: 1.2,
+      precipitationParticleDensity: 1.25,
+      atmosphericDrama: 1.35,
     },
     visualAtmosphere: {
       fog: 0.3,
@@ -244,11 +237,10 @@ export const LEVEL_VISUAL_THEMES: Record<LevelId, LevelVisualTheme> = {
     mountainDensity: 0.35,
     vegetationDensity: 0.6,
     riverPresence: true,
-    weatherProfile: {
-      cloudFrequency: 0.3,
-      rainfallProbability: 0.15,
-      snowProbability: 0.05,
-      stormProbability: 0.05,
+    renderingModifiers: {
+      cloudDensityMultiplier: 1.0,
+      precipitationParticleDensity: 1.0,
+      atmosphericDrama: 1.1,
     },
     visualAtmosphere: {
       fog: 0.1,
@@ -270,11 +262,10 @@ export const LEVEL_VISUAL_THEMES: Record<LevelId, LevelVisualTheme> = {
     mountainDensity: 0.55,
     vegetationDensity: 0.65,
     riverPresence: true,
-    weatherProfile: {
-      cloudFrequency: 0.45,
-      rainfallProbability: 0.3,
-      snowProbability: 0.2,
-      stormProbability: 0.2,
+    renderingModifiers: {
+      cloudDensityMultiplier: 1.15,
+      precipitationParticleDensity: 1.15,
+      atmosphericDrama: 1.25,
     },
     visualAtmosphere: {
       fog: 0.2,

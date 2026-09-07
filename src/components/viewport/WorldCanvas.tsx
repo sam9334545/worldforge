@@ -699,9 +699,10 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
         if (cloud.y < -550) cloud.y = 550;
 
         // Soft ground shadow blob cast on the landscape
+        const cloudMult = visualTheme.renderingModifiers?.cloudDensityMultiplier ?? 1.0;
         const shadowGrad = ctx.createRadialGradient(cloud.x, cloud.y + 30, 10, cloud.x, cloud.y + 30, cloud.size * 0.75);
-        shadowGrad.addColorStop(0, `rgba(0, 0, 0, ${cloud.opacity * 0.38})`);
-        shadowGrad.addColorStop(0.65, `rgba(0, 0, 0, ${cloud.opacity * 0.16})`);
+        shadowGrad.addColorStop(0, `rgba(0, 0, 0, ${cloud.opacity * 0.38 * cloudMult})`);
+        shadowGrad.addColorStop(0.65, `rgba(0, 0, 0, ${cloud.opacity * 0.16 * cloudMult})`);
         shadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
         ctx.fillStyle = shadowGrad;
         ctx.beginPath();
@@ -1374,8 +1375,10 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       // ----------------------------------------------------
       // LIVING RAINFALL ANIMATION
       // ----------------------------------------------------
-      if (visualWeather.isRaining || activeXRayLayer === 'hydro') {
-        const alpha = Math.min(0.7, 0.25 + visualWeather.rainIntensity * 0.35);
+      const precipMultiplier = visualTheme.renderingModifiers?.precipitationParticleDensity ?? 1.0;
+
+      if (visualWeather.isRaining) {
+        const alpha = Math.min(0.85, (0.25 + visualWeather.rainIntensity * 0.35) * precipMultiplier);
         ctx.save();
         ctx.strokeStyle = `rgba(175, 215, 255, ${alpha})`;
         ctx.lineWidth = 1.2;
@@ -1402,7 +1405,7 @@ export const WorldCanvas: React.FC<WorldCanvasProps> = ({
       // LIVING SNOWFALL ANIMATION
       // ----------------------------------------------------
       if (visualWeather.isSnowing) {
-        const snowAlpha = Math.min(0.85, 0.4 + visualWeather.snowIntensity * 0.4);
+        const snowAlpha = Math.min(0.9, (0.4 + visualWeather.snowIntensity * 0.4) * precipMultiplier);
         ctx.save();
         ctx.fillStyle = `rgba(245, 250, 255, ${snowAlpha})`;
         for (const s of snowParticles.current) {
