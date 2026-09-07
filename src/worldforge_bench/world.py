@@ -112,6 +112,11 @@ class WorldState:
     elevation: np.ndarray          # float, from terrain + ridge generation
     channel_width: np.ndarray
     channel_depth: np.ndarray
+    # Continuous bed elevation. Equal to `elevation` on land, but descending
+    # smoothly along a river so consecutive water cells have a real gradient.
+    # Integer terrain elevation alone flattens long river runs to zero head,
+    # which silently makes most hydro sites worthless.
+    bed: np.ndarray = None
 
     # Layer C -- player objects
     overlays: dict = field(default_factory=dict)      # (x,y) -> list[str]
@@ -141,6 +146,8 @@ class WorldState:
     caches: dict = field(default_factory=dict)
 
     def __post_init__(self):
+        if self.bed is None:
+            self.bed = self.elevation.astype(np.float64).copy()
         if self.fields is None:
             self.fields = Fields.zeros(self.height, self.width)
 

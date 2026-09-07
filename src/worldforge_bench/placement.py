@@ -61,11 +61,21 @@ def can_place(state, kind: str, x: int, y: int, cfg) -> PlacementResult:
 
     # 4. Water compatibility
     if kind == "hydro":
+        spec = cfg.machines.hydro
         q = float(state.fields.flow_q[y, x])
-        if q < cfg.machines.hydro.q_min_m3s:
+        if q < spec.q_min_m3s:
             return _invalid(
-                f"hydro requires flow >= {cfg.machines.hydro.q_min_m3s} m3/s, "
-                f"cell has {q:.2f}")
+                f"hydro requires flow >= {spec.q_min_m3s} m3/s, cell has {q:.2f}")
+        # Head must be checked here too. RULE-HYDRO-001 floors output at zero
+        # below h_min, so a cell with flow but no gradient would otherwise be a
+        # legal site for a turbine that can never generate -- exactly the kind
+        # of invalid configuration Section 35 requires be refused at placement
+        # time rather than discovered at runtime.
+        head = float(state.fields.head[y, x])
+        if head < spec.h_min_m:
+            return _invalid(
+                f"hydro requires head >= {spec.h_min_m} m, cell has {head:.2f} "
+                f"(flat reach: no usable gradient here)")
     if kind == "floating_solar":
         vel = float(state.fields.velocity[y, x])
         if vel > cfg.machines.v_float_max_ms:

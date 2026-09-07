@@ -28,7 +28,11 @@ class FlowRouter:
         self.h, self.w = h, w
         self.downstream = np.full((h, w, 2), -1, dtype=np.int32)
 
-        surf = state.elevation
+        # Route on the continuous bed, not the rounded terrain elevation.
+        # Rounding flattens long river runs, which leaves consecutive water
+        # cells with no strictly-lower neighbour, hence no downstream link and
+        # hence no hydraulic head anywhere along the reach.
+        surf = state.bed
         for y in range(h):
             for x in range(w):
                 best = None
@@ -154,7 +158,7 @@ def _route_rivers(state, cfg, router: FlowRouter, runoff: np.ndarray) -> None:
     )
 
     # E16 head: the surface drop across this cell, upstream face to downstream.
-    surf = state.elevation * cfg.water.head_per_elevation_m + f.water_level
+    surf = state.bed * cfg.water.head_per_elevation_m + f.water_level
     flat_surf = surf.ravel()
     head = np.zeros(h * w, dtype=np.float64)
     for src, dst in router.water_steps:

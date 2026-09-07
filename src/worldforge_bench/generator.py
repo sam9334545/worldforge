@@ -112,12 +112,22 @@ def generate(seed: int, cfg) -> WorldState:
     elev = np.round(elev).astype(np.float64)
     elev[terrain == T.WATER.id] = np.minimum(elev[terrain == T.WATER.id], 2.0)
 
+    # Give the river a continuous descending bed. Without this, rounding
+    # elevation to integers leaves long flat runs with zero head, so hydro is
+    # legal-but-useless on most water cells.
+    bed = elev.astype(np.float64).copy()
+    if river:
+        drop_per_cell = 0.35
+        start = float(bed[river[0][1], river[0][0]])
+        for i, (rx, ry) in enumerate(river):
+            bed[ry, rx] = max(0.0, start - i * drop_per_cell)
+
     channel_width = np.full((h, w), cfg.water.channel_width_m)
     channel_depth = np.full((h, w), cfg.water.channel_depth_m)
 
     state = WorldState(
         seed=seed, width=w, height=h,
-        terrain=terrain, elevation=elev,
+        terrain=terrain, elevation=elev, bed=bed,
         channel_width=channel_width, channel_depth=channel_depth,
     )
 
