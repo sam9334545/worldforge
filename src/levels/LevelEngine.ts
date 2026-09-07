@@ -1,9 +1,11 @@
 /**
  * Level Engine
- * Prepares deterministic simulation state tailored to each specific Level Configuration
+ * Prepares deterministic simulation state tailored to each specific Level Configuration,
+ * optionally restoring previous player-built grid infrastructure.
  */
 
 import type { LevelConfig } from './LevelConfig.ts';
+import type { LevelGridSnapshot } from './LevelProgress.ts';
 import { WorldGenerator } from '../sim/generator.ts';
 import { SimulationEngine } from '../sim/engine.ts';
 import type { WorldState } from '../sim/contracts/WorldState.ts';
@@ -12,9 +14,13 @@ import type { TerrainId } from '../sim/types.ts';
 
 export class LevelEngine {
   /**
-   * Builds an initial WorldState configured strictly according to the level specification
+   * Builds an initial WorldState configured strictly according to the level specification,
+   * optionally restoring a previously saved player grid snapshot.
    */
-  public static buildWorldForLevel(config: LevelConfig): { worldState: WorldState; engine: SimulationEngine } {
+  public static buildWorldForLevel(
+    config: LevelConfig,
+    restoreSnapshot?: LevelGridSnapshot | null
+  ): { worldState: WorldState; engine: SimulationEngine } {
     const { width, height } = config.dimensions;
     const seed = config.seed;
 
@@ -51,7 +57,53 @@ export class LevelEngine {
         // Remove any default machines so the player starts with a blank slate
         cell.machine = null;
         cell.cable = null;
+        cell.has_cable = false;
+        cell.hasCable = false;
         cell.overlays = [];
+      }
+    }
+
+    // 1b. Restore saved player structure if requested
+    if (restoreSnapshot && restoreSnapshot.structures && restoreSnapshot.structures.length > 0) {
+      for (const s of restoreSnapshot.structures) {
+        if (s.y >= 0 && s.y < height && s.x >= 0 && s.x < width) {
+          const cell = baseWorld.grid[s.y][s.x];
+          if (s.machine) {
+            cell.machine = {
+              id: `mach-restored-${s.x}-${s.y}`,
+              type: s.machine.type as any,
+              x: s.x,
+              y: s.y,
+              orientation: s.machine.orientation ?? 180,
+              capacity: 500,
+              efficiency: s.machine.efficiency ?? 0.85,
+              health: 1.0,
+              ageTicks: 0,
+              lifespanTicks: 10000,
+              maintenanceCostPerTick: 5,
+              buildCost: 5000,
+              isOperating: s.machine.isOperating ?? true,
+            };
+          }
+          if (s.cable) {
+            cell.cable = {
+              id: `cable-restored-${s.x}-${s.y}`,
+              x: s.x,
+              y: s.y,
+              connectedTo: [],
+              capacity: s.cable.capacity ?? 1000,
+              currentThroughput: s.cable.currentThroughput ?? 0,
+              lossPerCell: 0.012,
+            };
+          }
+          cell.has_cable = Boolean(s.has_cable || s.hasCable);
+          cell.hasCable = Boolean(s.has_cable || s.hasCable);
+          cell.overlays = s.overlays ? [...s.overlays as any] : [];
+        }
+      }
+      if (restoreSnapshot.cash !== undefined && restoreSnapshot.cash > 0) {
+        baseWorld.economy.cash = restoreSnapshot.cash;
+        baseWorld.economy.netWorth = restoreSnapshot.cash;
       }
     }
 
@@ -67,7 +119,6 @@ export class LevelEngine {
 
     // 3. Configure Demand Zones
     if (config.id === 9) {
-      // Level 9: Multiple demand zones to challenge transmission routing!
       baseWorld.demandZones = [
         {
           id: 'zone-industrial-south',
@@ -87,7 +138,6 @@ export class LevelEngine {
         }
       ];
     } else {
-      // Standard demand zone at bottom-right corner
       baseWorld.demandZones = [
         {
           id: 'zone-central',

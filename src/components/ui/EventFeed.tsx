@@ -4,9 +4,10 @@ import type { SimulationEvent } from '../../sim/contracts/SimulationEvent.ts';
 interface EventFeedProps {
   events: SimulationEvent[];
   onSelectEvent: (event: SimulationEvent) => void;
+  onDismissEvent?: (eventId: string) => void;
 }
 
-export const EventFeed: React.FC<EventFeedProps> = ({ events, onSelectEvent }) => {
+export const EventFeed: React.FC<EventFeedProps> = ({ events, onSelectEvent, onDismissEvent }) => {
   // Show last 4 most recent events
   const recentEvents = events.slice(0, 4);
 
@@ -44,6 +45,7 @@ export const EventFeed: React.FC<EventFeedProps> = ({ events, onSelectEvent }) =
               border: `1px solid ${isCritical ? 'var(--error-bright)' : isWarning ? 'var(--warning-bright)' : 'var(--border-subtle)'}`,
               boxShadow: 'var(--glass-shadow)',
               cursor: 'pointer',
+              position: 'relative',
               transition: 'transform 0.1s ease, border-color 0.15s ease'
             }}
             title="Click to focus on affected area and inspect causal factors"
@@ -59,7 +61,7 @@ export const EventFeed: React.FC<EventFeedProps> = ({ events, onSelectEvent }) =
               {isCritical ? 'error' : isWarning ? 'warning' : 'info'}
             </span>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, paddingRight: onDismissEvent ? '18px' : 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)' }}>
                   {evt.title}
@@ -77,6 +79,44 @@ export const EventFeed: React.FC<EventFeedProps> = ({ events, onSelectEvent }) =
                 </span>
               )}
             </div>
+
+            {/* Dismiss Cross (✕) Button */}
+            {onDismissEvent && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDismissEvent(evt.id);
+                }}
+                style={{
+                  position: 'absolute',
+                  top: '6px',
+                  right: '6px',
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: 'rgba(0, 0, 0, 0.35)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: 'var(--text-secondary, #94a3b8)',
+                  cursor: 'pointer',
+                  padding: 0,
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(248, 81, 73, 0.8)';
+                  (e.currentTarget as HTMLElement).style.color = '#ffffff';
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(0, 0, 0, 0.35)';
+                  (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary, #94a3b8)';
+                }}
+                title="Dismiss notification"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>close</span>
+              </button>
+            )}
           </div>
         );
       })}

@@ -22,6 +22,15 @@ export interface LevelObjectiveSpec {
   requiredSustainedTicks?: number; // must hold for N ticks, default 10
 }
 
+export interface NewUnlockItem {
+  name: string;
+  type: string;
+  icon: string;
+  cost?: string;
+  category: 'machine' | 'conduit' | 'stabilizer';
+  description: string;
+}
+
 export interface LevelConfig {
   id: LevelId;
   name: string;
@@ -38,6 +47,7 @@ export interface LevelConfig {
   requireGridConnection: boolean; // Level >= 6
   objective: LevelObjectiveSpec;
   defaultSeason?: 'Spring' | 'Summer' | 'Autumn' | 'Winter';
+  newUnlocksGuide?: NewUnlockItem[];
 }
 
 export interface LevelStatus {

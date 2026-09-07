@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { LevelId } from '../../levels/LevelConfig.ts';
 import { LEVEL_DEFINITIONS } from '../../levels/LevelDefinitions.ts';
 import { LevelProgress } from '../../levels/LevelProgress.ts';
 
 interface LevelCampaignModalProps {
   currentLevelId: LevelId;
-  onSelectLevel: (levelId: LevelId) => void;
+  onSelectLevel: (levelId: LevelId, restorePrevious?: boolean) => void;
   onClose: () => void;
 }
 
@@ -15,10 +15,20 @@ export const LevelCampaignModal: React.FC<LevelCampaignModalProps> = ({
   onClose
 }) => {
   const allStatus = LevelProgress.getAllStatus();
+  const [structurePromptLvl, setStructurePromptLvl] = useState<LevelId | null>(null);
 
   // 10 nodes organized as requested: [01]-[05] on row 1, [10]-[06] on row 2
   const row1: LevelId[] = [1, 2, 3, 4, 5];
   const row2: LevelId[] = [10, 9, 8, 7, 6];
+
+  const handleLevelClick = (lvlId: LevelId) => {
+    const hasSnapshot = LevelProgress.hasLevelGridSnapshot(lvlId);
+    if (hasSnapshot) {
+      setStructurePromptLvl(lvlId);
+    } else {
+      onSelectLevel(lvlId, false);
+    }
+  };
 
   const renderLevelCard = (lvlId: LevelId) => {
     const config = LEVEL_DEFINITIONS[lvlId];
@@ -34,13 +44,14 @@ export const LevelCampaignModal: React.FC<LevelCampaignModalProps> = ({
     const isCurrent = currentLevelId === lvlId;
     const isUnlocked = status.unlocked;
     const isCompleted = status.completed;
+    const hasSaved = LevelProgress.hasLevelGridSnapshot(lvlId);
 
     return (
       <div
         key={lvlId}
         onClick={() => {
           if (isUnlocked) {
-            onSelectLevel(lvlId);
+            handleLevelClick(lvlId);
           }
         }}
         style={{
@@ -125,17 +136,38 @@ export const LevelCampaignModal: React.FC<LevelCampaignModalProps> = ({
           </div>
         </div>
 
-        {/* Target Power Badge */}
-        <div style={{
-          fontSize: '9.5px',
-          fontWeight: 600,
-          color: isUnlocked ? 'var(--text-muted)' : 'var(--text-muted)',
-          backgroundColor: 'var(--surface-container-highest)',
-          padding: '2px 6px',
-          borderRadius: '4px',
-          textAlign: 'center'
-        }}>
-          Target: {config.objective.targetPowerKW} kW
+        {/* Saved Structure Indicator / Target Power Badge */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {hasSaved && (
+            <div style={{
+              fontSize: '8.5px',
+              fontWeight: 700,
+              color: '#38bdf8',
+              backgroundColor: 'rgba(56, 189, 248, 0.15)',
+              border: '1px solid rgba(56, 189, 248, 0.3)',
+              padding: '1px 4px',
+              borderRadius: '3px',
+              textAlign: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '3px'
+            }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '10px' }}>save</span>
+              <span>Saved Grid</span>
+            </div>
+          )}
+          <div style={{
+            fontSize: '9.5px',
+            fontWeight: 600,
+            color: 'var(--text-muted)',
+            backgroundColor: 'var(--surface-container-highest)',
+            padding: '2px 6px',
+            borderRadius: '4px',
+            textAlign: 'center'
+          }}>
+            Target: {config.objective.targetPowerKW} kW
+          </div>
         </div>
       </div>
     );
@@ -193,7 +225,9 @@ export const LevelCampaignModal: React.FC<LevelCampaignModalProps> = ({
                 padding: '4px 8px',
                 borderRadius: '4px',
                 color: 'var(--text-muted)',
-                border: '1px dashed var(--border-subtle)'
+                border: '1px dashed var(--border-subtle)',
+                backgroundColor: 'transparent',
+                cursor: 'pointer'
               }}
               title="Unlock All Levels (Evaluation Mode)"
             >
@@ -209,7 +243,10 @@ export const LevelCampaignModal: React.FC<LevelCampaignModalProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: 'var(--text-secondary)'
+                backgroundColor: 'transparent',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer'
               }}
             >
               <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>close</span>
@@ -288,6 +325,157 @@ export const LevelCampaignModal: React.FC<LevelCampaignModalProps> = ({
           <span>Authoritative Source: Section 21 Curriculum</span>
         </div>
       </div>
+
+      {/* Previous Structure Choice & Inspection Dialog */}
+      {structurePromptLvl !== null && (() => {
+        const snap = LevelProgress.getLevelGridSnapshot(structurePromptLvl);
+        const config = LEVEL_DEFINITIONS[structurePromptLvl];
+        return (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(5, 7, 10, 0.9)',
+            backdropFilter: 'blur(12px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 140,
+            padding: '20px'
+          }}>
+            <div style={{
+              width: '100%',
+              maxWidth: '480px',
+              backgroundColor: 'var(--surface-elevated, #0f172a)',
+              border: '1px solid #38bdf8',
+              borderRadius: 'var(--radius-xl, 16px)',
+              boxShadow: '0 0 32px rgba(56, 189, 248, 0.25)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              <div style={{
+                backgroundColor: 'rgba(56, 189, 248, 0.12)',
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(56, 189, 248, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: '20px', color: '#38bdf8' }}>
+                    history_edu
+                  </span>
+                  <div>
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.08em' }}>
+                      PREVIOUS GAME STRUCTURE
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: '#ffffff' }}>
+                      Sector {structurePromptLvl}: {config.name}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setStructurePromptLvl(null)}
+                  style={{
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>close</span>
+                </button>
+              </div>
+
+              <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5', margin: 0 }}>
+                  You previously engineered a grid infrastructure on this sector. Review your saved build structure below:
+                </p>
+
+                {snap && (
+                  <div style={{
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '8px',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px'
+                  }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#ffd700' }}>
+                      📋 Previous Game Structure Breakdown:
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '11px', color: '#cbd5e1' }}>
+                      <div>⚡ Machines Built: <strong>{snap.summary.totalMachines}</strong></div>
+                      <div>🔌 Conduits Laid: <strong>{snap.summary.totalCables}</strong></div>
+                      <div>🏗️ Overlays: <strong>{snap.summary.totalOverlays}</strong></div>
+                      <div>💰 Saved Balance: <strong>${snap.cash.toLocaleString()}</strong></div>
+                    </div>
+                    {Object.keys(snap.summary.machineCounts).length > 0 && (
+                      <div style={{ fontSize: '10.5px', color: '#38bdf8', marginTop: '4px', backgroundColor: 'rgba(56, 189, 248, 0.08)', padding: '4px 8px', borderRadius: '4px' }}>
+                        Machine Details: {Object.entries(snap.summary.machineCounts).map(([type, count]) => `${count}x ${type}`).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                  <button
+                    onClick={() => {
+                      const lvl = structurePromptLvl;
+                      setStructurePromptLvl(null);
+                      onSelectLevel(lvl, true);
+                    }}
+                    style={{
+                      padding: '10px 16px',
+                      backgroundColor: '#38bdf8',
+                      color: '#05070a',
+                      fontWeight: 800,
+                      fontSize: '12.5px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      boxShadow: '0 0 16px rgba(56, 189, 248, 0.35)'
+                    }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>restore</span>
+                    <span>Resume Previous Game Structure</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const lvl = structurePromptLvl;
+                      setStructurePromptLvl(null);
+                      onSelectLevel(lvl, false);
+                    }}
+                    style={{
+                      padding: '9px 16px',
+                      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                      color: 'var(--text-secondary)',
+                      fontWeight: 600,
+                      fontSize: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-subtle)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>restart_alt</span>
+                    <span>Start Fresh (Reset Grid)</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

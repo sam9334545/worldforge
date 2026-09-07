@@ -19,11 +19,21 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
       ],
       hint: 'Place multiple Land Solar arrays on Grass terrain to reach the initial 150 kW generation threshold.'
     },
+    newUnlocksGuide: [
+      {
+        name: 'Land Solar Array',
+        type: 'LandSolar',
+        icon: 'solar_power',
+        cost: '$5,000 (Maint: $2/tick)',
+        category: 'machine',
+        description: 'Deploy on stable dry terrain (Sand, Grass, Stone). Produces up to 200 kW during peak sunlight hours. Forbidden on water and snow peaks. Requires soil stability ≥ 0.70.'
+      }
+    ],
     dimensions: { width: 12, height: 12 },
     seed: 101,
     startingCash: 25000,
     demandKW: 150,
-    allowedTerrain: ['T01', 'T02', 'T04', 'T05', 'T06'], // Grass, Sand, Stone, Snow/Peak, Water all visually present
+    allowedTerrain: ['T01', 'T02', 'T04', 'T05', 'T06'],
     unlockedMachines: ['LandSolar'],
     unlockedOverlays: [],
     unlockedXRayLayers: ['none', 'solar'],
@@ -43,12 +53,30 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     briefing: {
       story: 'Rocky outcrops have been discovered adjacent to coastal sandflats. Atmospheric stations report steady ambient airflow.',
       newMechanics: [
-        'Wind Turbines convert kinetic air movement into electricity (P = 0.5 * rho * A * v^3)',
+        'Wind Turbines convert kinetic air movement into electricity',
         'Stone outcrops provide elevation boosts for wind capture',
         'Gravel reinforcement stabilizes unstable soil for infrastructure'
       ],
       hint: 'Compare Solar output on plains against Wind Turbines on elevated stone ridges. Notice how roughness affects wind velocity.'
     },
+    newUnlocksGuide: [
+      {
+        name: 'Wind Turbine',
+        type: 'WindTurbine',
+        icon: 'wind_power',
+        cost: '$12,000 (Maint: $8/tick)',
+        category: 'machine',
+        description: 'Harvests kinetic energy from passing air currents. Yield scales with the cube of wind velocity. High elevation stone ridges provide significant wind speed multipliers.'
+      },
+      {
+        name: 'Gravel Stabilizer',
+        type: 'Gravel',
+        icon: 'terrain',
+        cost: '$500 / cell',
+        category: 'stabilizer',
+        description: 'Applies crushed stone foundation to loose Sand and Mud terrain (+0.25 effective stability), allowing heavy machine construction.'
+      }
+    ],
     dimensions: { width: 12, height: 12 },
     seed: 102,
     startingCash: 35000,
@@ -77,8 +105,18 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
         'Turbine yaw angle misalignment reduces output by cos(Delta angle)',
         'Wake interference: turbines too close (< 2.0 cells) disrupt airflow'
       ],
-      hint: 'Inspect wind direction using the Wind Vector X-Ray. Orient your turbines facing upwind and maintain spatial clearance between towers.'
+      hint: 'Inspect wind direction using the Wind Vector X-Ray. Orient your turbines facing upwind with [R] and maintain spatial clearance between towers.'
     },
+    newUnlocksGuide: [
+      {
+        name: 'Aerodynamic Yaw Alignment',
+        type: 'WindTurbine',
+        icon: 'rotate_right',
+        cost: 'Press [R] to Rotate',
+        category: 'machine',
+        description: 'Rotate wind turbines using the R key to point directly into the oncoming wind vector. Ensure at least 2 cells of spacing between turbines to prevent aerodynamic wake turbulence.'
+      }
+    ],
     dimensions: { width: 14, height: 14 },
     seed: 103,
     startingCash: 45000,
@@ -101,27 +139,37 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     name: 'Solar Dynamics',
     subtitle: 'Level 4: Temporal Cycles',
     briefing: {
-      story: 'The orbital diurnal and seasonal solar engine is fully engaged. Sun elevation rises at dawn, peaks at solar noon, and declines toward dusk.',
+      story: 'Summer heatwaves create massive diurnal irradiance fluctuations. Surface water bodies offer natural cooling for specialized photovoltaic pontoons.',
       newMechanics: [
-        'Sun azimuth and elevation angle shift hour-by-hour',
-        'Seasonal changes modulate base solar irradiance and daytime duration',
-        'Nighttime produces zero solar irradiance (sun elevation <= 0)'
+        'Diurnal cycle: solar intensity peaks at noon and drops to zero at night',
+        'Floating Solar pontoons deploy on calm water surfaces',
+        'Water evaporative cooling boosts floating panel efficiency by +10%'
       ],
-      hint: 'Relying exclusively on solar leaves nighttime power deficits. Complement daytime solar with nighttime wind capacity.'
+      hint: 'Place Floating Solar on calm water tiles to benefit from evaporative cooling efficiency bonuses.'
     },
+    newUnlocksGuide: [
+      {
+        name: 'Floating Solar Array',
+        type: 'FloatSolar',
+        icon: 'wb_sunny',
+        cost: '$7,500 (Maint: $3/tick)',
+        category: 'machine',
+        description: 'Specialized photovoltaic pontoons engineered for water surfaces. Water evaporative cooling grants a +10% efficiency bonus. Water velocity must not exceed 1.5 m/s.'
+      }
+    ],
     dimensions: { width: 14, height: 14 },
     seed: 104,
-    startingCash: 55000,
+    startingCash: 50000,
     demandKW: 800,
     allowedTerrain: ['T01', 'T02', 'T04', 'T05', 'T06'],
-    unlockedMachines: ['LandSolar', 'WindTurbine'],
+    unlockedMachines: ['LandSolar', 'FloatSolar', 'WindTurbine'],
     unlockedOverlays: ['Gravel'],
-    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind'],
+    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'water'],
     requireGridConnection: false,
     objective: {
-      description: 'Maintain 800 kW average power output across varying diurnal sun conditions.',
+      description: 'Deliver 800 kW during daytime and buffer output with wind at night.',
       targetPowerKW: 800,
-      requiredSustainedTicks: 8
+      requiredSustainedTicks: 6
     },
     defaultSeason: 'Summer'
   },
@@ -131,25 +179,35 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     name: 'River Power',
     subtitle: 'Level 5: New-Modality Integration',
     briefing: {
-      story: 'A major river channel cuts through the river valley. Hydrological kinetic potential is now available for deployment.',
+      story: 'A major river channel cuts through the mountain pass. Hydrokinetic turbines can deliver continuous, non-intermittent baseline power.',
       newMechanics: [
-        'Hydro Turbines placed directly on river cells generate constant baseload',
-        'Hydro generation depends on flow rate Q and hydraulic head H (P = rho * g * Q * H * eta)',
-        'Hydro requires minimum flow (Q >= 5.0 m3/s) to initiate turbine rotation'
+        'Hydroelectric generators harness hydraulic volumetric flow rate (Q)',
+        'Hydro plants provide 24/7 steady baseline power regardless of weather',
+        'Hydro density cap: minimum 2-tile spacing between river plants'
       ],
-      hint: 'Place Hydro Turbines at high-flow channel points where elevation drop (head) is greatest for maximum generation.'
+      hint: 'Inspect river flow rate using the Hydrology X-Ray layer. Place Hydro Plants on high-velocity river sections.'
     },
+    newUnlocksGuide: [
+      {
+        name: 'Hydrokinetic Plant',
+        type: 'HydroTurbine',
+        icon: 'waves',
+        cost: '$20,000 (Maint: $12/tick)',
+        category: 'machine',
+        description: 'Construct on river channel cells with flow rate Q ≥ 1.0 m³/s. Generates continuous baseline power independent of day/night cycles (85% hydraulic efficiency).'
+      }
+    ],
     dimensions: { width: 16, height: 16 },
     seed: 105,
-    startingCash: 70000,
+    startingCash: 65000,
     demandKW: 1200,
-    allowedTerrain: ['T01', 'T02', 'T04', 'T06'], // + Water
-    unlockedMachines: ['LandSolar', 'WindTurbine', 'HydroTurbine'],
+    allowedTerrain: ['T01', 'T02', 'T04', 'T05', 'T06'],
+    unlockedMachines: ['LandSolar', 'FloatSolar', 'WindTurbine', 'HydroTurbine'],
     unlockedOverlays: ['Gravel'],
-    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'water'],
+    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'hydro', 'water'],
     requireGridConnection: false,
     objective: {
-      description: 'Integrate hydroelectric baseload with solar and wind to generate 1,200 kW.',
+      description: 'Integrate Hydro, Solar, and Wind to sustain 1,200 kW continuous output.',
       targetPowerKW: 1200,
       requiredSustainedTicks: 8
     },
@@ -161,27 +219,37 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     name: 'Interconnected Systems',
     subtitle: 'Level 6: Systemic & Causal Reasoning',
     briefing: {
-      story: 'The regional power authority now enforces strict grid connection requirements! Power is only delivered if connected via high-voltage conduits to Demand Zones.',
+      story: 'The regional power grid is active! Power generated by remote facilities must now be physically transported through transmission cables to Demand Zones.',
       newMechanics: [
-        'CABLE NETWORK REQUIRED: Generators must connect to Demand Zones via Conduit cables',
-        'Atmospheric cloud cover dynamically shadows solar arrays, attenuating irradiance',
-        'Rainfall increases soil moisture, generating surface runoff that swells river flow'
+        'Physical grid transmission: generators must connect to Demand Zone cells',
+        'High-Voltage Conduits transmit electricity across terrain',
+        'Transmission losses: long cable runs incur resistive line drop (~1.2%/cell)'
       ],
-      hint: 'Use the Conduit Tool to lay cables from your generation sites to the city Demand Zone. Watch out for passing cloud systems!'
+      hint: 'Use the Conduit tool to build an unbroken cable route from your generators to the glowing Demand Zone intake cells.'
     },
+    newUnlocksGuide: [
+      {
+        name: 'High-Voltage Conduit (Cable)',
+        type: 'Cable',
+        icon: 'cable',
+        cost: '$100 / cell',
+        category: 'conduit',
+        description: 'Connects distant generators to the glowing DEMAND INTAKE tiles. Power delivers and earns revenue only when an unbroken conduit link exists. Generators can be built on top of cables.'
+      }
+    ],
     dimensions: { width: 16, height: 16 },
     seed: 106,
-    startingCash: 85000,
+    startingCash: 75000,
     demandKW: 1500,
-    allowedTerrain: ['T01', 'T02', 'T03', 'T04', 'T06'], // + Mud
-    unlockedMachines: ['LandSolar', 'WindTurbine', 'HydroTurbine', 'Cable'],
-    unlockedOverlays: ['Gravel', 'Stone'],
-    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'water', 'cloud', 'energy'],
-    requireGridConnection: true, // Grid connection enforced!
+    allowedTerrain: ['T01', 'T02', 'T04', 'T05', 'T06'],
+    unlockedMachines: ['LandSolar', 'FloatSolar', 'WindTurbine', 'HydroTurbine'],
+    unlockedOverlays: ['Gravel'],
+    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'hydro', 'network'],
+    requireGridConnection: true,
     objective: {
-      description: 'Deliver 1,500 kW of energy directly to the Demand Zone through high-voltage cables.',
+      description: 'Connect all generators via conduits to supply 1,500 kW to the Demand Zone.',
       targetPowerKW: 1500,
-      requiredSustainedTicks: 10
+      requiredSustainedTicks: 8
     },
     defaultSeason: 'Summer'
   },
@@ -191,25 +259,35 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     name: 'Highland Winds',
     subtitle: 'Level 7: Spatial & Causal Reasoning',
     briefing: {
-      story: 'A towering mountain range splits the terrain. Windward slopes experience orographic wind acceleration, while leeward valleys sit in deep wind shadows.',
+      story: 'A steep mountain ridge offers fierce alpine wind currents. However, steep terrain and leeward wind shadows penalize careless placement.',
       newMechanics: [
-        'Wind Shadow Effect: Leeward cells behind ridges experience up to 60% wind velocity drops',
-        'Orographic lift forces cloud formation along windward mountain slopes',
-        'Rain shadow suppresses precipitation downwind of the mountain spine'
+        'Mountain orographic acceleration boosts wind velocity on crests',
+        'Leeward wind shadow zones suffer severe velocity reductions (up to 60%)',
+        'Stone Anchor Footings secure heavy turbines on steep inclines'
       ],
-      hint: 'Avoid placing wind turbines in the leeward wind shadow behind the mountain ridge. Exploit high-elevation crests for accelerated wind speed.'
+      hint: 'Consult the Wind X-Ray layer to identify mountain crest speed zones and avoid building in the leeward wind shadow.'
     },
-    dimensions: { width: 18, height: 18 },
+    newUnlocksGuide: [
+      {
+        name: 'Stone Anchor Footing',
+        type: 'Stone',
+        icon: 'architecture',
+        cost: '$1,000 / cell',
+        category: 'stabilizer',
+        description: 'Engineered geotechnical foundation for steep inclines and marshland (+0.40 effective stability), enabling secure installation of high-capacity turbines.'
+      }
+    ],
+    dimensions: { width: 16, height: 16 },
     seed: 107,
-    startingCash: 100000,
+    startingCash: 85000,
     demandKW: 2000,
-    allowedTerrain: ['T01', 'T02', 'T03', 'T04', 'T06'],
-    unlockedMachines: ['LandSolar', 'WindTurbine', 'HydroTurbine', 'Cable'],
+    allowedTerrain: ['T01', 'T02', 'T04', 'T05', 'T06'],
+    unlockedMachines: ['LandSolar', 'FloatSolar', 'WindTurbine', 'HydroTurbine'],
     unlockedOverlays: ['Gravel', 'Stone'],
-    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'water', 'cloud', 'energy'],
+    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'hydro', 'network'],
     requireGridConnection: true,
     objective: {
-      description: 'Deliver 2,000 kW to the demand grid while navigating complex mountain wind shadows.',
+      description: 'Exploit highland crest winds to supply 2,000 kW while avoiding wind shadows.',
       targetPowerKW: 2000,
       requiredSustainedTicks: 10
     },
@@ -221,27 +299,37 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     name: 'Alpine Thaw',
     subtitle: 'Level 8: Delayed Consequences & Memory',
     briefing: {
-      story: 'Sub-zero mountain peaks accumulate deep winter snowpacks. As spring temperatures elevate, massive snowmelt runoff surges into downstream rivers.',
+      story: 'Deep winter snowpacks blanket the upper peaks. As temperatures rise in spring, snowmelt triggers massive downstream river flow surges.',
       newMechanics: [
-        'Sub-zero temperatures freeze precipitation into snowpack accumulation on high peaks',
-        'Thermal warming above 0 deg C triggers degree-day snowmelt, releasing high runoff',
-        'Downstream river flow surges exponentially during thaw events, supercharging hydro turbines'
+        'Seasonal thermal lag: ambient temperature elevation triggers snowmelt',
+        'Runoff surges dramatically increase hydro flow rates (Q)',
+        'Freezing temperatures diminish hydro generation during cold snaps'
       ],
-      hint: 'Monitor the Snow X-Ray layer. Prepare your grid to harvest surging hydro output during melt events while buffering with wind and solar during freezes.'
+      hint: 'Prepare for seasonal thermal transitions. Deploy hydro turbines in channels that capture alpine runoff surges.'
     },
-    dimensions: { width: 20, height: 20 },
+    newUnlocksGuide: [
+      {
+        name: 'Thermal Snowmelt Surges',
+        type: 'HydroTurbine',
+        icon: 'ac_unit',
+        cost: 'Thermal Coupling',
+        category: 'machine',
+        description: 'Spring warming melts high-elevation snowpacks into river channels, multiplying river velocity Q and generating massive surges in hydro generation output.'
+      }
+    ],
+    dimensions: { width: 16, height: 16 },
     seed: 108,
-    startingCash: 120000,
+    startingCash: 95000,
     demandKW: 2500,
-    allowedTerrain: ['T01', 'T02', 'T03', 'T04', 'T05', 'T06'], // + Snow/Peak
-    unlockedMachines: ['LandSolar', 'WindTurbine', 'HydroTurbine', 'Cable'],
+    allowedTerrain: ['T01', 'T02', 'T04', 'T05', 'T06'],
+    unlockedMachines: ['LandSolar', 'FloatSolar', 'WindTurbine', 'HydroTurbine'],
     unlockedOverlays: ['Gravel', 'Stone'],
-    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'water', 'cloud', 'snow', 'energy'],
+    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'hydro', 'snow', 'network'],
     requireGridConnection: true,
     objective: {
-      description: 'Deliver 2,500 kW sustained through seasonal freeze-thaw hydrological cycles.',
+      description: 'Capitalize on seasonal snowmelt surges to deliver 2,500 kW to the regional grid.',
       targetPowerKW: 2500,
-      requiredSustainedTicks: 12
+      requiredSustainedTicks: 10
     },
     defaultSeason: 'Winter'
   },
@@ -251,27 +339,37 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     name: 'Grid Economy',
     subtitle: 'Level 9: Resource Allocation & Optimization',
     briefing: {
-      story: 'Multiple industrial and residential demand zones require power. Long-distance transmission conduits incur resistive Joule losses (P_loss = I^2 * R).',
+      story: 'Two independent demand hubs (Industrial Sector South and Metro North) offer tiered dynamic tariffs ($0.18 and $0.22/kWh). Balancing capital and transmission is essential.',
       newMechanics: [
-        'Transmission loss increases with cable distance and line impedance (1.2% loss/cell)',
-        'Multiple demand zones have differentiated tier pricing ($0.12 - $0.20 / kWh)',
-        'Economic optimization requires balancing capital build costs against long-term operational profit'
+        'Multi-terminal demand routing with varying economic power tariffs',
+        'Levelized cost optimization: balancing turbine costs against long cable routes',
+        'Positive operating margin requirement alongside power delivery'
       ],
-      hint: 'Optimize cable routing distances to minimize transmission losses. Connect to high-tier demand zones to maximize net operating profits.'
+      hint: 'Prioritize connecting to the high-tariff Metro North demand zone to maximize daily operating profit.'
     },
-    dimensions: { width: 22, height: 22 },
+    newUnlocksGuide: [
+      {
+        name: 'Multi-Terminal Grid Routing',
+        type: 'Cable',
+        icon: 'alt_route',
+        cost: 'Optimized Transmission',
+        category: 'conduit',
+        description: 'Connect to both Industrial South ($0.18/kWh) and Metro North ($0.22/kWh). Route conduits strategically to capture premium tariff revenue while minimizing transmission resistance losses.'
+      }
+    ],
+    dimensions: { width: 16, height: 16 },
     seed: 109,
-    startingCash: 150000,
+    startingCash: 110000,
     demandKW: 3000,
-    allowedTerrain: ['T01', 'T02', 'T03', 'T04', 'T05', 'T06'],
-    unlockedMachines: ['LandSolar', 'WindTurbine', 'HydroTurbine', 'Cable'],
+    allowedTerrain: ['T01', 'T02', 'T04', 'T05', 'T06'],
+    unlockedMachines: ['LandSolar', 'FloatSolar', 'WindTurbine', 'HydroTurbine'],
     unlockedOverlays: ['Gravel', 'Stone'],
-    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'water', 'cloud', 'snow', 'energy'],
+    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'hydro', 'network', 'ai'],
     requireGridConnection: true,
     objective: {
-      description: 'Deliver 3,000 kW and sustain at least $1,500/day in net operating profit.',
+      description: 'Deliver 3,000 kW across both demand zones and achieve a positive daily operating profit.',
       targetPowerKW: 3000,
-      minProfit: 1500,
+      minProfit: 1000,
       requiredSustainedTicks: 12
     },
     defaultSeason: 'Spring'
@@ -282,27 +380,36 @@ export const LEVEL_DEFINITIONS: Record<number, LevelConfig> = {
     name: 'Generalization Frontier',
     subtitle: 'Level 10: Full Transfer & Autonomous Evaluation',
     briefing: {
-      story: 'The ultimate frontier: a completely unfamiliar, procedurally regenerated landscape with stochastic weather shocks and multi-year simulation horizon.',
+      story: 'The master evaluation scenario: complex archipelago terrain with rapid seasonal shifts, orographic winds, tidal flows, and full multi-spectral telemetry.',
       newMechanics: [
-        'Unseen procedural topology: steep gorges, high plateaus, and shifting weather fronts',
-        'Stochastic weather anomalies: thermal surges, sudden cloudbursts, and gust fronts',
-        'Full AI Evaluation harness: evaluate human and benchmark agent policies across 90%+ reliability'
+        'Full multi-modal ecosystem integration (Solar, Wind, Hydro, Floating Solar)',
+        'Multi-spectral X-Ray suite with live AI world model benchmark prediction',
+        'Extreme weather resilience and sustained operational stability'
       ],
-      hint: 'Employ all foundational principles: diversify generation modalities, respect wind clearance, stabilize soft soils, and engineer redundant grid conduits.'
+      hint: 'Deploy a complete multi-modal energy network across land, water, and ridges. Maintain 3,500 kW sustained delivery.'
     },
-    dimensions: { width: 24, height: 24 },
-    seed: 999,
-    startingCash: 200000,
+    newUnlocksGuide: [
+      {
+        name: 'Full Multi-Modal Grid Integration',
+        type: 'Generalization',
+        icon: 'hub',
+        cost: 'Master Tier',
+        category: 'machine',
+        description: 'Synthesize solar, wind, hydro, foundation stabilization, and high-voltage transmission networks to achieve maximum grid capacity and autonomous stability.'
+      }
+    ],
+    dimensions: { width: 16, height: 16 },
+    seed: 110,
+    startingCash: 130000,
     demandKW: 3500,
-    allowedTerrain: ['T01', 'T02', 'T03', 'T04', 'T05', 'T06'],
-    unlockedMachines: ['LandSolar', 'WindTurbine', 'HydroTurbine', 'Cable'],
+    allowedTerrain: ['T01', 'T02', 'T04', 'T05', 'T06'],
+    unlockedMachines: ['LandSolar', 'FloatSolar', 'WindTurbine', 'HydroTurbine'],
     unlockedOverlays: ['Gravel', 'Stone'],
-    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'water', 'cloud', 'snow', 'energy', 'ai'],
+    unlockedXRayLayers: ['none', 'solar', 'elevation', 'wind', 'hydro', 'snow', 'network', 'ai'],
     requireGridConnection: true,
     objective: {
-      description: 'Deliver 3,500 kW, sustain 90%+ grid reliability, and maintain $2,000/day operating profit on an unfamiliar map.',
+      description: 'Attain the ultimate milestone: sustain 3,500 kW across the archipelago with >95% reliability.',
       targetPowerKW: 3500,
-      minReliability: 0.90,
       minProfit: 2000,
       requiredSustainedTicks: 15
     },

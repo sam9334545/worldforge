@@ -11,6 +11,8 @@ interface TopHUDProps {
   onToggleAIComparison?: () => void;
   isAIComparisonOpen?: boolean;
   onOpenCampaign?: () => void;
+  onOpenRuleBook?: () => void;
+  onDismissActiveEvent?: () => void;
   activeLevelNumber?: number;
   isLevelCompleted?: boolean;
   onRestartLevel?: () => void;
@@ -26,6 +28,8 @@ export const TopHUD: React.FC<TopHUDProps> = ({
   onToggleAIComparison,
   isAIComparisonOpen = false,
   onOpenCampaign,
+  onOpenRuleBook,
+  onDismissActiveEvent,
   activeLevelNumber,
   isLevelCompleted = false,
   onRestartLevel,
@@ -249,7 +253,7 @@ export const TopHUD: React.FC<TopHUDProps> = ({
             alignItems: 'center',
             gap: '6px',
             backgroundColor: activeEvent.severity === 'critical' ? 'var(--error-container)' : 'var(--warning-container)',
-            padding: '2px 10px',
+            padding: '2px 8px 2px 10px',
             borderRadius: 'var(--radius-full)',
             fontSize: '10px',
             color: activeEvent.severity === 'critical' ? 'var(--error-bright)' : 'var(--warning-bright)',
@@ -258,6 +262,31 @@ export const TopHUD: React.FC<TopHUDProps> = ({
           }}>
             <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>warning</span>
             <span>EVENT: {activeEvent.title}</span>
+            {onDismissActiveEvent && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDismissActiveEvent();
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '14px',
+                  height: '14px',
+                  padding: 0,
+                  backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  color: 'currentColor',
+                  cursor: 'pointer',
+                  marginLeft: '2px'
+                }}
+                title="Dismiss event notice"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '10px' }}>close</span>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -299,6 +328,31 @@ export const TopHUD: React.FC<TopHUDProps> = ({
           </div>
           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>World-Model Eval</span>
         </div>
+
+        {/* Rule Book Button */}
+        {onOpenRuleBook && (
+          <button
+            onClick={onOpenRuleBook}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 9px',
+              backgroundColor: 'rgba(255, 215, 0, 0.15)',
+              color: '#ffd700',
+              borderRadius: 'var(--radius-xs)',
+              fontSize: '11px',
+              fontWeight: 700,
+              border: '1px solid rgba(255, 215, 0, 0.4)',
+              boxShadow: '0 0 8px rgba(255, 215, 0, 0.2)',
+              cursor: 'pointer'
+            }}
+            title="Open Game Manual & Placement Rule Book"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>menu_book</span>
+            <span>Rule Book</span>
+          </button>
+        )}
 
         {/* Campaign Map Button */}
         {onOpenCampaign && (

@@ -12,6 +12,7 @@ import { EventFeed } from './components/ui/EventFeed.tsx';
 import { RightContextPanel } from './components/inspection/RightContextPanel.tsx';
 import { CausalInspector } from './components/inspection/CausalInspector.tsx';
 import { AIComparisonCard } from './components/inspection/AIComparisonCard.tsx';
+import { RuleBookModal } from './components/ui/RuleBookModal.tsx';
 import { CausalTracer, type CausalTrace } from './sim/causalTracer.ts';
 import { runPhase1Verification } from './sim/verification/phase1Check.ts';
 
@@ -43,6 +44,15 @@ export function App() {
   const [showVictoryModal, setShowVictoryModal] = useState<boolean>(false);
   const [isLevelCompleted, setIsLevelCompleted] = useState<boolean>(false);
   const [starsEarned, setStarsEarned] = useState<number>(1);
+
+  // Rule Book modal state (requirement 2: auto-shows on reload / Level 1 start)
+  const [showRuleBook, setShowRuleBook] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('worldforge_show_rulebook_v1') !== 'false';
+    } catch {
+      return true;
+    }
+  });
 
   // Initial world state configured to Seed 42 by default (Section 39 Walkthrough world)
   const [worldState, setWorldState] = useState<WorldState>(() => {
@@ -90,10 +100,16 @@ export function App() {
   // Verification check
   const verification = useMemo(() => runPhase1Verification(), []);
 
-  // Level selection handler
-  const handleSelectLevel = useCallback((levelId: LevelId) => {
+  // Level selection handler with previous structure restoration capability (requirement 3)
+  const handleSelectLevel = useCallback((levelId: LevelId, restorePrevious = false) => {
+    // Persist current level's structure snapshot
+    if (worldState.grid && currentLevelId) {
+      LevelProgress.saveLevelGridSnapshot(currentLevelId, worldState.grid, worldState.economy.cash);
+    }
+
     const cfg = LEVEL_DEFINITIONS[levelId];
-    const { worldState: newWorld, engine } = LevelEngine.buildWorldForLevel(cfg);
+    const snap = restorePrevious ? LevelProgress.getLevelGridSnapshot(levelId) : null;
+    const { worldState: newWorld, engine } = LevelEngine.buildWorldForLevel(cfg, snap);
     engineRef.current = engine;
     setCurrentLevelId(levelId);
     setWorldState(newWorld);
@@ -108,19 +124,30 @@ export function App() {
     setShowVictoryModal(false);
     setIsLevelCompleted(false);
     setShowBriefingModal(true);
-  }, []);
+  }, [currentLevelId, worldState.grid, worldState.economy.cash]);
 
   // Level restart handler
   const handleRestartLevel = useCallback(() => {
-    handleSelectLevel(currentLevelId);
+    handleSelectLevel(currentLevelId, false);
   }, [currentLevelId, handleSelectLevel]);
 
   // Next level handler
   const handleNextLevel = useCallback(() => {
     if (currentLevelId < 10) {
-      handleSelectLevel((currentLevelId + 1) as LevelId);
+      handleSelectLevel((currentLevelId + 1) as LevelId, false);
     }
   }, [currentLevelId, handleSelectLevel]);
+
+  // Event dismissal handler (requirement 1: dismiss notification with cross button)
+  const handleDismissEvent = useCallback((eventId: string) => {
+    setWorldState(prev => ({
+      ...prev,
+      events: prev.events.filter(e => e.id !== eventId)
+    }));
+    if (activeEvent?.id === eventId) {
+      setActiveEvent(null);
+    }
+  }, [activeEvent]);
 
   // Helper to clone world state for React state immutability and wallet reactivity
   const cloneState = (s: WorldState): WorldState => {
@@ -162,6 +189,8 @@ export function App() {
           evalRes.currentPowerKW,
           evalRes.currentProfit
         );
+        // Also save snapshot on winning
+        LevelProgress.saveLevelGridSnapshot(currentLevelId, result.state.grid, result.state.economy.cash);
         setStarsEarned(outcome.starsEarned);
         setIsLevelCompleted(true);
         setShowVictoryModal(true);
@@ -214,7 +243,7 @@ export function App() {
     } else {
       const matched = Object.values(LEVEL_DEFINITIONS).find(l => l.seed === seed);
       if (matched) {
-        handleSelectLevel(matched.id);
+        handleSelectLevel(matched.id, false);
         return;
       }
       const next = WorldGenerator.generateWorld({ seed, isWalkthroughPreset: false });
@@ -249,7 +278,6 @@ export function App() {
         orientation: 180,
       });
 
-      setWorldState(cloneState(stepResult.state));
       if (mode !== 'build') {
         setSelectedCell(stepResult.state.grid[cell.y][cell.x]);
       }
@@ -257,7 +285,7 @@ export function App() {
       if (stepResult.validationResult && !stepResult.validationResult.valid) {
         const errorReason = stepResult.validationResult.errorReason || stepResult.validationResult.reason || 'Placement violates specification rules.';
         audioSystem.playErrorSound();
-        setActiveEvent({
+        const rejectEvent: SimulationEvent = {
           id: `evt-reject-${Date.now()}`,
           tick: stepResult.state.time.tick,
           type: 'PLACEMENT_REJECTED',
@@ -265,11 +293,17 @@ export function App() {
           title: `Cannot Place: ${errorReason}`,
           description: stepResult.validationResult.reason || errorReason,
           location: { x: cell.x, y: cell.y },
-        });
+        };
+        setWorldState(prev => ({
+          ...cloneState(stepResult.state),
+          events: [rejectEvent, ...prev.events.filter(e => e.id !== rejectEvent.id)],
+        }));
+        setActiveEvent(rejectEvent);
       } else {
-        // Trigger visual construction shockwave and audio SFX
+        setWorldState(cloneState(stepResult.state));
         audioSystem.playPlacementSound(selectedTool.type);
         setConstructionPulse({ x: cell.x, y: cell.y, time: performance.now() });
+        LevelProgress.saveLevelGridSnapshot(currentLevelId, stepResult.state.grid, stepResult.state.economy.cash);
       }
     } else if (selectedTool.kind === 'overlay') {
       const stepResult = engineRef.current.step({
@@ -279,7 +313,6 @@ export function App() {
         y: cell.y,
       });
 
-      setWorldState(cloneState(stepResult.state));
       if (mode !== 'build') {
         setSelectedCell(stepResult.state.grid[cell.y][cell.x]);
       }
@@ -287,7 +320,7 @@ export function App() {
       if (stepResult.validationResult && !stepResult.validationResult.valid) {
         const errorReason = stepResult.validationResult.errorReason || stepResult.validationResult.reason || 'Overlay violates rules.';
         audioSystem.playErrorSound();
-        setActiveEvent({
+        const rejectEvent: SimulationEvent = {
           id: `evt-reject-${Date.now()}`,
           tick: stepResult.state.time.tick,
           type: 'PLACEMENT_REJECTED',
@@ -295,10 +328,17 @@ export function App() {
           title: `Cannot Reinforce: ${errorReason}`,
           description: stepResult.validationResult.reason || errorReason,
           location: { x: cell.x, y: cell.y },
-        });
+        };
+        setWorldState(prev => ({
+          ...cloneState(stepResult.state),
+          events: [rejectEvent, ...prev.events.filter(e => e.id !== rejectEvent.id)],
+        }));
+        setActiveEvent(rejectEvent);
       } else {
+        setWorldState(cloneState(stepResult.state));
         audioSystem.playOverlaySound();
         setConstructionPulse({ x: cell.x, y: cell.y, time: performance.now() });
+        LevelProgress.saveLevelGridSnapshot(currentLevelId, stepResult.state.grid, stepResult.state.economy.cash);
       }
     }
   };
@@ -317,11 +357,12 @@ export function App() {
     audioSystem.playPlacementSound('Cable');
     const updated = engineRef.current.getSimulationState();
     setWorldState(cloneState(updated));
+    LevelProgress.saveLevelGridSnapshot(currentLevelId, updated.grid, updated.economy.cash);
     if (path.length > 0) {
       const last = path[path.length - 1];
       setConstructionPulse({ x: last.x, y: last.y, time: performance.now() });
     }
-  }, []);
+  }, [currentLevelId]);
 
   // Machine Orientation / Yaw rotation handler (Level 3+ Wind, Level 4+ Solar)
   const handleRotateMachine = useCallback((cell: CellState, deltaAngle = 45) => {
@@ -335,10 +376,11 @@ export function App() {
       orientation: newAngle,
     });
     setWorldState(cloneState(result.state));
+    LevelProgress.saveLevelGridSnapshot(currentLevelId, result.state.grid, result.state.economy.cash);
     if (selectedCell && selectedCell.x === cell.x && selectedCell.y === cell.y) {
       setSelectedCell(result.state.grid[cell.y][cell.x]);
     }
-  }, [selectedCell]);
+  }, [selectedCell, currentLevelId]);
 
   // Keyboard shortcut listener: 'R' rotates hovered/selected machine
   useEffect(() => {
@@ -364,6 +406,7 @@ export function App() {
     });
     audioSystem.playDemolishSound();
     setWorldState(cloneState(result.state));
+    LevelProgress.saveLevelGridSnapshot(currentLevelId, result.state.grid, result.state.economy.cash);
     setSelectedCell(result.state.grid[cell.y][cell.x]);
   };
 
@@ -447,6 +490,8 @@ export function App() {
         onToggleAIComparison={() => setShowAIComparison(s => !s)}
         isAIComparisonOpen={showAIComparison}
         onOpenCampaign={() => setShowCampaignModal(true)}
+        onOpenRuleBook={() => setShowRuleBook(true)}
+        onDismissActiveEvent={() => setActiveEvent(null)}
         activeLevelNumber={currentLevelId}
         isLevelCompleted={isLevelCompleted}
         onRestartLevel={handleRestartLevel}
@@ -454,10 +499,11 @@ export function App() {
         currentLevelId={currentLevelId}
       />
 
-      {/* 2. EVENT FEED (Top-Right Floating RimWorld-style Cards) */}
+      {/* 2. EVENT FEED (Top-Right Floating Cards with Dismiss Button) */}
       <EventFeed
         events={worldState.events}
         onSelectEvent={handleSelectEvent}
+        onDismissEvent={handleDismissEvent}
       />
 
       {/* 3. MAIN VIEWPORT (Occupies 100% full screen under floating HUD) */}
@@ -545,7 +591,17 @@ export function App() {
       />
 
       {/* 6. MODALS */}
-      {/* Level Briefing Cinematic Modal */}
+      {/* Rule Book & Operations Manual (Requirement 2) */}
+      <RuleBookModal
+        isOpen={showRuleBook}
+        onClose={() => setShowRuleBook(false)}
+        onOpenCampaign={() => {
+          setShowRuleBook(false);
+          setShowCampaignModal(true);
+        }}
+      />
+
+      {/* Level Briefing Cinematic Modal (Includes New Unlock Descriptions - Requirement 4) */}
       {showBriefingModal && (
         <LevelBriefingModal
           level={activeLevel}
@@ -578,7 +634,7 @@ export function App() {
         />
       )}
 
-      {/* Visual Campaign Map Modal */}
+      {/* Visual Campaign Map Modal (Includes Previous Structure Inspection & Choice - Requirement 3) */}
       {showCampaignModal && (
         <LevelCampaignModal
           currentLevelId={currentLevelId}

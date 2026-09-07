@@ -1,12 +1,37 @@
 /**
  * Level Progress Manager
- * Persists campaign progression, high scores, and stars
+ * Persists campaign progression, high scores, stars, and saved grid structures
  */
 
 import type { LevelId, LevelStatus } from './LevelConfig.ts';
 import { LEVEL_DEFINITIONS } from './LevelDefinitions.ts';
+import type { CellState } from '../sim/types.ts';
 
 const STORAGE_KEY = 'terraforge_campaign_progress_v1';
+const SNAPSHOT_PREFIX = 'terraforge_level_snapshot_lvl_';
+
+export interface LevelGridStructure {
+  x: number;
+  y: number;
+  machine?: { type: string; orientation?: number; efficiency?: number; isOperating?: boolean } | null;
+  cable?: { capacity: number; currentThroughput?: number } | null;
+  has_cable?: boolean;
+  hasCable?: boolean;
+  overlays?: string[];
+}
+
+export interface LevelGridSnapshot {
+  levelId: number;
+  timestamp: number;
+  cash: number;
+  structures: LevelGridStructure[];
+  summary: {
+    totalMachines: number;
+    totalCables: number;
+    totalOverlays: number;
+    machineCounts: Record<string, number>;
+  };
+}
 
 export class LevelProgress {
   /**
@@ -101,11 +126,119 @@ export class LevelProgress {
   }
 
   /**
+   * Saves player-built grid structure snapshot for a level
+   */
+  public static saveLevelGridSnapshot(
+    levelId: number,
+    grid: CellState[][],
+    cash: number
+  ): void {
+    try {
+      const structures: LevelGridStructure[] = [];
+      let totalMachines = 0;
+      let totalCables = 0;
+      let totalOverlays = 0;
+      const machineCounts: Record<string, number> = {};
+
+      for (let y = 0; y < grid.length; y++) {
+        for (let x = 0; x < grid[y].length; x++) {
+          const cell = grid[y][x];
+          const hasMachine = Boolean(cell.machine);
+          const hasCable = Boolean(cell.has_cable || cell.hasCable || cell.cable);
+          const hasOverlays = Boolean(cell.overlays && cell.overlays.length > 0);
+
+          if (hasMachine || hasCable || hasOverlays) {
+            if (hasMachine && cell.machine) {
+              totalMachines++;
+              const mType = String(cell.machine.type);
+              machineCounts[mType] = (machineCounts[mType] || 0) + 1;
+            }
+            if (hasCable) totalCables++;
+            if (hasOverlays && cell.overlays) totalOverlays += cell.overlays.length;
+
+            structures.push({
+              x,
+              y,
+              machine: cell.machine ? {
+                type: String(cell.machine.type),
+                orientation: cell.machine.orientation ?? 180,
+                efficiency: cell.machine.efficiency,
+                isOperating: cell.machine.isOperating,
+              } : null,
+              cable: cell.cable ? { capacity: cell.cable.capacity, currentThroughput: cell.cable.currentThroughput } : null,
+              has_cable: Boolean(cell.has_cable || cell.hasCable),
+              hasCable: Boolean(cell.has_cable || cell.hasCable),
+              overlays: cell.overlays ? [...cell.overlays] : [],
+            });
+          }
+        }
+      }
+
+      // Only save if there are actual player structures
+      if (structures.length > 0) {
+        const snapshot: LevelGridSnapshot = {
+          levelId,
+          timestamp: Date.now(),
+          cash,
+          structures,
+          summary: {
+            totalMachines,
+            totalCables,
+            totalOverlays,
+            machineCounts,
+          }
+        };
+        localStorage.setItem(`${SNAPSHOT_PREFIX}${levelId}`, JSON.stringify(snapshot));
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Retrieves player-built structure snapshot for a level
+   */
+  public static getLevelGridSnapshot(levelId: number): LevelGridSnapshot | null {
+    try {
+      const raw = localStorage.getItem(`${SNAPSHOT_PREFIX}${levelId}`);
+      if (!raw) return null;
+      return JSON.parse(raw) as LevelGridSnapshot;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Checks if a previous structure snapshot exists for a level
+   */
+  public static hasLevelGridSnapshot(levelId: number): boolean {
+    try {
+      return localStorage.getItem(`${SNAPSHOT_PREFIX}${levelId}`) !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Clears saved structure snapshot for a level
+   */
+  public static clearLevelGridSnapshot(levelId: number): void {
+    try {
+      localStorage.removeItem(`${SNAPSHOT_PREFIX}${levelId}`);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
    * Resets all progress back to initial campaign state (Level 1 unlocked only)
    */
   public static resetProgress(): void {
     try {
       localStorage.removeItem(STORAGE_KEY);
+      for (let i = 1; i <= 10; i++) {
+        localStorage.removeItem(`${SNAPSHOT_PREFIX}${i}`);
+      }
     } catch {
       // Ignore
     }

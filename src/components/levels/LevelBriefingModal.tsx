@@ -26,7 +26,8 @@ export const LevelBriefingModal: React.FC<LevelBriefingModalProps> = ({
     }}>
       <div style={{
         width: '100%',
-        maxWidth: '540px',
+        maxWidth: '560px',
+        maxHeight: '90vh',
         backgroundColor: 'var(--surface-elevated)',
         border: '1px solid var(--border-subtle)',
         borderRadius: 'var(--radius-xl)',
@@ -75,11 +76,11 @@ export const LevelBriefingModal: React.FC<LevelBriefingModalProps> = ({
           </span>
         </div>
 
-        {/* Modal Body */}
-        <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {/* Modal Body (Scrollable if needed) */}
+        <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
           {/* Narrative Story */}
           <p style={{
-            fontSize: '13.5px',
+            fontSize: '13px',
             lineHeight: '1.6',
             color: 'var(--text-secondary)',
             margin: 0
@@ -87,10 +88,67 @@ export const LevelBriefingModal: React.FC<LevelBriefingModalProps> = ({
             {level.briefing.story}
           </p>
 
+          {/* Newly Introduced Equipment / Conduit / Stabilizer Guide (Requirement 4) */}
+          {level.newUnlocksGuide && level.newUnlocksGuide.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                color: '#38bdf8',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>construction</span>
+                <span>NEW EQUIPMENT & SPECIFICATIONS</span>
+              </div>
+
+              {level.newUnlocksGuide.map((item, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+                    border: '1px solid rgba(56, 189, 248, 0.25)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#ffd700' }}>
+                        {item.icon}
+                      </span>
+                      <strong style={{ fontSize: '12.5px', color: '#ffffff' }}>
+                        {item.name}
+                      </strong>
+                    </div>
+                    {item.cost && (
+                      <span style={{
+                        fontSize: '10px',
+                        color: 'var(--text-secondary)',
+                        backgroundColor: 'var(--surface-container-highest)',
+                        padding: '2px 6px',
+                        borderRadius: '4px'
+                      }}>
+                        {item.cost}
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ fontSize: '11.5px', color: '#cbd5e1', lineHeight: '1.5', margin: '2px 0 0 0' }}>
+                    {item.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* New Mechanics Card */}
           <div style={{
             backgroundColor: 'var(--surface-container-lowest)',
-            padding: '14px 16px',
+            padding: '12px 16px',
             borderRadius: 'var(--radius-md)',
             border: '1px solid var(--border-subtle)'
           }}>
@@ -98,21 +156,21 @@ export const LevelBriefingModal: React.FC<LevelBriefingModalProps> = ({
               fontSize: '11px',
               fontWeight: 700,
               color: 'var(--cyan-bright)',
-              marginBottom: '10px',
+              marginBottom: '8px',
               display: 'flex',
               alignItems: 'center',
               gap: '6px'
             }}>
               <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>auto_awesome</span>
-              <span>NEW SYSTEMS INTRODUCED</span>
+              <span>TACTICAL BRIEFING</span>
             </div>
             <ul style={{
               margin: 0,
               paddingLeft: '18px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '6px',
-              fontSize: '12px',
+              gap: '4px',
+              fontSize: '11.5px',
               color: 'var(--text-primary)'
             }}>
               {level.briefing.newMechanics.map((m, idx) => (
@@ -138,7 +196,7 @@ export const LevelBriefingModal: React.FC<LevelBriefingModalProps> = ({
               <div style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--primary-bright)', letterSpacing: '0.05em' }}>
                 PRIMARY DIRECTIVE
               </div>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>
+              <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>
                 {level.objective.description}
               </div>
             </div>
@@ -146,13 +204,13 @@ export const LevelBriefingModal: React.FC<LevelBriefingModalProps> = ({
 
           {/* Tactical Hint */}
           <div style={{
-            fontSize: '11.5px',
+            fontSize: '11px',
             color: 'var(--text-muted)',
             display: 'flex',
             alignItems: 'flex-start',
             gap: '6px'
           }}>
-            <span className="material-symbols-outlined" style={{ fontSize: '15px', color: 'var(--warning-bright)' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '14px', color: 'var(--warning-bright)' }}>
               lightbulb
             </span>
             <span><em>Tactical Hint:</em> {level.briefing.hint}</span>
@@ -162,7 +220,7 @@ export const LevelBriefingModal: React.FC<LevelBriefingModalProps> = ({
         {/* Footer Actions */}
         <div style={{
           backgroundColor: 'var(--surface-container-highest)',
-          padding: '16px 24px',
+          padding: '14px 24px',
           borderTop: '1px solid var(--border-subtle)',
           display: 'flex',
           alignItems: 'center',
@@ -175,7 +233,10 @@ export const LevelBriefingModal: React.FC<LevelBriefingModalProps> = ({
               fontSize: '12px',
               fontWeight: 600,
               borderRadius: 'var(--radius-md)',
-              color: 'var(--text-secondary)'
+              color: 'var(--text-secondary)',
+              backgroundColor: 'transparent',
+              border: '1px solid var(--border-subtle)',
+              cursor: 'pointer'
             }}
           >
             Campaign Map
@@ -184,7 +245,7 @@ export const LevelBriefingModal: React.FC<LevelBriefingModalProps> = ({
             onClick={onStartSimulation}
             style={{
               padding: '10px 24px',
-              fontSize: '13px',
+              fontSize: '12.5px',
               fontWeight: 700,
               backgroundColor: 'var(--primary-bright)',
               color: '#05070a',
@@ -192,7 +253,9 @@ export const LevelBriefingModal: React.FC<LevelBriefingModalProps> = ({
               boxShadow: '0 0 16px rgba(56, 139, 253, 0.4)',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px'
+              gap: '6px',
+              border: 'none',
+              cursor: 'pointer'
             }}
           >
             <span>START SIMULATION</span>
