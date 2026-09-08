@@ -12,3 +12,6 @@ paper/
 # Front-end lives in sam9334545/worldforge (branch python-benchmark).
 # Kept here on disk for local dev against the API, but not tracked in this repo.
 frontend/
+
+# Hackathon paper: drafts stay local.
+paper-hackathon/
