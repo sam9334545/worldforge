@@ -1,0 +1,271 @@
+\documentclass{article}
+\usepackage[preprint]{hackathon_style}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{microtype}
+\usepackage{listings}
+
+\hypersetup{colorlinks=true, linkcolor=black, citecolor=black, urlcolor=blue}
+\lstset{basicstyle=\ttfamily\scriptsize, breaklines=true, frame=single,
+        framesep=4pt, rulecolor=\color{gray!50}, columns=fullflexible,
+        keepspaces=true, showstringspaces=false}
+
+\title{\textsc{Endogrid}: Measuring the Cost of Reasoning\\on a Long-Horizon
+       Economic Planning Benchmark}
+
+\author{%
+  \normalsize
+  Hackathon submission\\
+  \texttt{worldforge\_bench}
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Architectures such as the Dragon Hatchling \citep{kosowski2025bdh} and BDH-CQ
+\citep{engdahl2026bdhcq} are motivated by a specific bet: that adaptation
+through \emph{recurrent state} can match explicit reasoning at a fraction of the
+inference cost. Testing that bet needs environments where both routes can be
+run under one budget and one score. We present \textsc{Endogrid}, a
+deterministic ten-simulated-year infrastructure-development benchmark whose
+objective is the equity value of a business rather than any quantity the agent
+can monotonically accumulate, and we use it to measure the cost of reasoning
+directly. Under a matched twenty-decision budget on the same map, a
+state-based policy that performs no search, no backtracking and no weight
+updates scores $40.8$; the best language-model agent scores $43.4$. The policy
+reaches $94\%$ of that score at $1/670$ of the cost --- $32{,}870$ points per
+dollar against $53.9$. Meanwhile an agent restricted to a fixed
+terrain$\rightarrow$machine lookup table scores $6.8$, \emph{below} the $16.3$
+of doing nothing at all, confirming the environment penalises memorised
+surface correlations rather than rewarding them. We are explicit about what
+this is and is not: we did not run a BDH model. What we contribute is the
+harness, the protocol and the measured frontier on which that comparison can be
+made, together with the finding that on this task the expensive route buys
+little.
+\end{abstract}
+
+\section{The question}
+
+The interesting claim shared by the Dragon Hatchling \citep{kosowski2025bdh} and
+BDH-CQ \citep{engdahl2026bdhcq} is not that recurrent-state models are more
+accurate. It is that a large part of what explicit reasoning buys can be got
+more cheaply. BDH is evaluated on Sudoku-Extreme at $97.4\%$ top-1 \emph{with no
+chain-of-thought and no backtracking}; BDH-CQ adapts to an unseen ARC task
+through recurrent state alone, with no parameter updates at inference. Both are
+statements about the price of correctness, not only its ceiling.
+
+That claim is hard to test on puzzle benchmarks, because a puzzle is scored
+right or wrong and the cost axis is left implicit. What is missing is an
+environment where (i) an agent must plan over a long horizon in an unfamiliar
+world, (ii) the objective cannot be climbed by doing more of the rewarded thing,
+and (iii) both a cheap state-based policy and an expensive reasoning system can
+be run under one budget and scored on one number.
+
+We built that environment and measured the frontier.
+
+\paragraph{What we claim, and what we do not.} We did not run a BDH model.
+Every result here is a scripted policy or a language-model agent. The
+contribution is the harness and the measurement: a benchmark where the
+cost of reasoning is visible, a protocol borrowed from the BDH and ARC-AGI-2
+evaluations, and the empirical observation that on this task a policy with no
+search loop is within $6\%$ of the best language model at three orders of
+magnitude less cost. That is a motivation for architectures like BDH, not
+evidence for them.
+
+\section{The environment}
+
+An agent is given a procedurally generated terrain, a starting balance sheet of
+\$25M, and ten simulated years. It sites solar, wind and hydro generators,
+orients them, wires them into demand zones, finances them with cash and debt,
+and may hedge output with long-term contracts. Each simulated hour the physical
+layer resolves --- sun position, wind field, water cycle, river flow, machine
+output, transmission --- and then a market clears.
+
+\subsection{Why the objective is not monotone}
+
+Most agent benchmarks score an accumulable quantity, so an agent climbs by doing
+more of the rewarded thing. Here the price of electricity is endogenous: it
+clears every tick against a residual demand curve served by a background thermal
+fleet in merit order. Renewables bid at zero marginal cost, so the agent's own
+output displaces the marginal unit and lowers the price it earns:
+
+\begin{center}
+\small
+\begin{tabular}{rrl}
+\toprule
+Agent supply (kW) & Clearing price (\$/MWh) & Marginal unit \\
+\midrule
+0        & 79.10    & CCGT \\
+10{,}000 & 75.25    & lignite \\
+20{,}000 & 9.00     & nuclear \\
+30{,}000 & $-3.12$  & oversupply \\
+60{,}000 & $-25.00$ & price floor \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Each asset is discounted at its \emph{own} realised capture price, so an agent
+that floods the market marks down the assets it already owns. Building more can
+be worth less, and the naive maximising policy defeats itself. Wealth can fall:
+capital is scarce, leverage is priced, covenants bind, and insolvency ends the
+episode.
+
+\subsection{Rules that must be inferred, not memorised}
+
+No terrain carries an energy multiplier. ``Sand means solar'' and ``mountain
+means wind'' are both false by construction --- a leeward mountain cell has
+\emph{worse} wind than flat ground, because of an orographic wind-shadow term.
+Output traces through chained physical variables: irradiance through a
+terrain-obstruction ray-cast and a real incidence cosine against panel tilt and
+azimuth; turbine power through $\tfrac{1}{2}\rho A v^3$ with a
+$\cos(\text{yaw})$ misalignment term that is a hard zero at $90^\circ$; hydro
+through $\rho g Q H$ with floors on discharge and head.
+
+This is a deliberate defence against causal confusion in the sense of
+\citet{tien2023causal}: an agent that latches onto a correlated surface feature
+instead of the causal chain should be punished. Section~\ref{sec:results} shows
+it is.
+
+\section{Protocol}
+\label{sec:protocol}
+
+We borrow the evaluation logic of the BDH line of work, and say plainly that it
+is the logic we are borrowing, not the model.
+
+\paragraph{No weight updates during the run.} An agent plays ten simulated years
+with no retraining, no fine-tuning and no gradient step. Only in-episode state
+changes: cash, built assets, and whatever the agent has learned about
+\emph{this} map's wind, water and terrain. This mirrors BDH-CQ's adaptation
+through recurrent state rather than parameters \citep{engdahl2026bdhcq}. It is a
+meaningful constraint rather than an arbitrary one precisely because the
+alternative exists: the Hierarchical Reasoning Model \citep{wang2025hrm} takes a
+backward pass per unseen task, and our agents are given no such route. Fixing
+the constraint makes the two families comparable.
+
+\paragraph{Memory is environmental, not a cache.} The recurrent state an agent
+must track is physical: soil moisture that carries rainfall forward, river
+discharge that lags its catchment, accumulated evidence about a prevailing wind
+bearing that mean-reverts seasonally, machine health that degrades. These are
+closer to the fast-weight, Hebbian synaptic memory of \citet{kosowski2025bdh}
+than to a key--value cache of past tokens: the state \emph{is} the world's, it
+persists whether or not the agent attends to it, and it is what makes a
+consequence delayed.
+
+\paragraph{Correctness without an explicit search loop.} BDH is tested on
+whether it reaches correct Sudoku solutions with no chain-of-thought and no
+backtracking \citep{kosowski2025bdh}. We apply the same behavioural signature.
+Our \texttt{heuristic} agent performs no search: it reads the fields at each
+candidate cell, ranks by expected return on capital, commits, and never revises
+by exploring alternatives. It cannot backtrack --- a built machine is a spent
+\$1.45M. Whether such a policy reaches good placements is the same question BDH
+is asked.
+
+\paragraph{Held-out seeds.} Following the private-set methodology of
+ARC-AGI-2 \citep{chollet2025arcagi2}, physical constants are fixed while map
+layout, river paths, ridge geometry and demand placement vary with the seed.
+Seeds 1--8 are development; \textbf{seeds 9 and 10 were not run until final
+scoring}. A generalisation gap is reported rather than assumed.
+
+\paragraph{One world, many tiers.} That a single procedurally generated grid
+world with graded difficulty is a legitimate evaluation design rather than a toy
+was established by Crafter \citep{hafner2022crafter}, and extended to
+open-ended task suites by MineDojo \citep{fan2022minedojo}. Our capability
+targets --- spatial reasoning over terrain and wind geometry, construction
+planning, memory of prior environmental outcomes, causal rule learning, and
+transfer to unfamiliar layouts --- follow that lineage.
+
+\section{Agents}
+
+\begin{center}
+\small
+\begin{tabular}{lp{9.4cm}}
+\toprule
+Agent & What it does \\
+\midrule
+\texttt{donothing} & Holds its starting capital. The floor any agent must clear
+to have created value. \\
+\texttt{lookup} & Consults a fixed terrain$\rightarrow$machine table at a fixed
+orientation. Never observes wind, sun, price or its own books. The
+memorisation control. \\
+\texttt{random} & Builds legal machines at random cells and orientations. The
+noise floor. \\
+\texttt{heuristic} & Ranks sites by the fields actually present at each cell,
+orients to the resource, wires to the nearest reachable zone, and stops building
+once its own supply would depress the price. No search, no backtracking. \\
+\midrule
+LLM agents & Opus 5, Sonnet 5, Haiku 4.5, playing blind through a command
+interface. Given the action schema and the objective only --- no description of
+the price mechanism, of what drives output, or of how assets are valued --- and
+instructed not to read the implementation. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% Generated from runs/ by make_results.py, so the paper cannot drift from
+% what the code produced. Absent until the benchmark has been run.
+\IfFileExists{results.tex}{\input{results}}{%
+  \section{Results}
+  \label{sec:results}
+  \emph{Results not yet generated. Run the benchmark and the generator:}
+  \begin{lstlisting}[language=bash]
+wfbench bench --agents donothing,lookup,random,heuristic \
+  --seeds 1-10 --years 10 --interval 4320 --out runs/hackathon_10seeds.json
+python3 paper-hackathon/make_results.py
+  \end{lstlisting}
+}
+
+\section{Limitations}
+
+\textbf{No BDH model was run.} This is a harness and a measurement, not an
+architecture comparison. The frontier we report is where a BDH-style model would
+have to land to be interesting; we have not put one there.
+
+\textbf{Single-seed language-model results.} Three episodes, one seed, one run
+each, on an engine version since corrected for a defect those episodes exposed.
+They calibrate cost and show the interface is usable without explanation. They
+do not rank models and we make no such ranking.
+
+\textbf{The causal-confusion ablation is not run.} We designed against spurious
+terrain shortcuts \citep{tien2023causal} and we show that a pure lookup table
+loses money. We have \emph{not} shown that our reasoning agents are free of some
+other surface shortcut. The honest test would hold physics fixed while permuting
+the cosmetic identity of terrain types; an agent relying on a genuine causal
+chain should be unaffected. That experiment is designed and unrun, and it is the
+first thing we would do next.
+
+\textbf{Cost accounting favours the scripted agents.} We price their CPU at a
+generous \$0.10/hour and count language-model tokens at published rates. The
+ratio is large enough that the accounting convention does not change the
+conclusion, but it is a convention.
+
+\section{Reproducing this}
+
+Deterministic: a seed, a configuration and an ordered action log reproduce a
+bit-identical state hash. Without that, a score difference between agents might
+be luck.
+
+\begin{lstlisting}[language=bash]
+pip install -e .
+wfbench bench --agents donothing,lookup,random,heuristic --seeds 1-10 --years 10
+wfbench generalise --agent heuristic --train 1-8 --held-out 9-10
+wfbench serve            # line-delimited JSON, for language-model agents
+wfbench api              # HTTP, for web front-ends and remote agents
+\end{lstlisting}
+
+Full interface documentation, including the action schema and the three ways to
+drive the engine, is in \texttt{docs/API.md}. Forty-one executable invariants
+cover per-tick water mass balance and energy conservation, determinism under
+action-log replay, wind-shadow directionality, turbine cut-in/cut-out, hydro
+floors, and the anti-memorisation probe.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}
