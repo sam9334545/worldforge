@@ -8,3 +8,7 @@ runs/
 .venv/
 paper/
 .DS_Store
+
+# Front-end lives in sam9334545/worldforge (branch python-benchmark).
+# Kept here on disk for local dev against the API, but not tracked in this repo.
+frontend/
