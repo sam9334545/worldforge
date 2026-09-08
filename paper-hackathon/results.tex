@@ -1,0 +1,55 @@
+\section{Results}
+\label{sec:results}
+
+\begin{table}[t]
+\centering\small
+\caption{Ten seeds, ten simulated years each, matched twenty-decision budget.
+Equity is terminal equity value in millions against a \$25M start; GWh is energy
+delivered; LCOE is levelised cost in \$/MWh; \emph{Ins.} counts insolvencies.}
+\label{tab:multi}
+\begin{tabular}{lrrrrrrrrr}
+\toprule
+Agent & Score & sd & min & max & Equity & Return & GWh & LCOE & Ins. \\
+\midrule
+\texttt{heuristic} & 43.8 & 11.5 & 14.6 & 55.1 & 46.5 & +86\% & 381 & 44 & 0 \\
+\texttt{random} & 22.2 & 11.4 & 10.7 & 43.8 & 28.3 & +13\% & 52 & 157 & 0 \\
+\texttt{donothing} & 16.3 & 0.0 & 16.3 & 16.3 & 25.0 & +0\% & 0 & 0 & 0 \\
+\texttt{lookup} & 9.1 & 2.5 & 4.4 & 12.2 & 17.0 & $-$32\% & 86 & 290 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Memorisation loses money.} \texttt{lookup} scores 9.1, below the 16.3 of holding capital and building nothing, with a mean return of -32\%. An agent applying a fixed terrain$\rightarrow$machine table does not merely fail to excel; it destroys capital, because it sites without regard to the resource that actually reaches a cell and orients every machine identically regardless of the wind. This is the falsifiable form of the anti-memorisation claim: if a lookup table ever became competitive, the environment would be rewarding the surface correlations it was built to punish \citep{tien2023causal}.
+
+\paragraph{Held-out seeds.} \texttt{heuristic} averages 46.0 on the eight development seeds and 34.9 on seeds 9 and 10, which were not run until final scoring --- a relative gap of +24.2\%, within noise, so we see no evidence of layout fitting. The policy has no parameters to fit, so this is a check that the \emph{environment} does not vary wildly by layout, as much as a check on the agent.
+
+\begin{table}[t]
+\centering\small
+\caption{Cost of reasoning. All agents on seed 1 under the same twenty-decision
+budget. Language-model cost is the whole-episode token total at published
+first-party rates; scripted cost prices CPU at \$0.10/hour, a deliberately
+generous figure. \emph{Score/\$} is the resulting accuracy-per-dollar. Scripted rows come from
+the same engine version as Table~\ref{tab:multi}. Haiku~4.5's row predates a
+correction to hydro siting and is contaminated by it; the other two
+language-model rows built no affected assets and are unaffected.}
+\label{tab:cost}
+\begin{tabular}{lrrrrr}
+\toprule
+Agent & Score & Equity & Cost & Minutes & Score/\$ \\
+\midrule
+Sonnet 5 & 43.4 & 46.8 & \$0.80 & 3.8 & 54 \\
+Opus 5 & 33.9 & 37.9 & \$2.26 & 6.3 & 15 \\
+Haiku 4.5 & 8.2 & 18.7 & \$0.35 & 2.1 & 24 \\
+\midrule
+\texttt{heuristic} & 40.8 & 44.9 & \$0.0011 & 0.7 & 36,960 \\
+\texttt{random} & 43.8 & 44.9 & \$0.0010 & 0.6 & 43,050 \\
+\texttt{donothing} & 16.3 & 25.0 & \$0.0007 & 0.4 & 22,149 \\
+\texttt{lookup} & 11.7 & 22.8 & \$0.0011 & 0.7 & 10,572 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:cost} is the result this paper exists for. On the same map, under the same budget, Sonnet 5 scores 43.4 and \texttt{heuristic} scores 40.8. The language model is ahead --- we are not claiming otherwise. But it costs \$0.80 and 3.8 minutes to get there, against a tenth of a cent and 0.7 minutes. The policy with no search loop reaches 94\% of the score at roughly $1/686$ of the cost, or 686$\times$ the accuracy per dollar.
+
+\paragraph{Why this is the interesting axis.} The same shape of argument runs through the recursive-reasoning literature: TRM reaches competitive accuracy with 7M parameters where HRM uses 27M \citep{jolicoeurmartineau2025trm,wang2025hrm}, and BDH-CQ adapts through recurrent state rather than a backward pass per task \citep{engdahl2026bdhcq}. What those results assert about parameter counts, Table~\ref{tab:cost} measures in dollars on a task with a long horizon and an economic objective. A model that matched the language-model score at the state-based policy's cost would dominate this frontier outright. Nothing we ran occupies that corner --- which is precisely the corner BDH-style architectures claim.
+

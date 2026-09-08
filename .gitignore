@@ -13,5 +13,3 @@ paper/
 # Kept here on disk for local dev against the API, but not tracked in this repo.
 frontend/
 
-# Hackathon paper: drafts stay local.
-paper-hackathon/
