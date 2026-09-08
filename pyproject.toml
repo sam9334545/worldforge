@@ -12,6 +12,7 @@ dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
+api = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
 
 [project.scripts]
 wfbench = "worldforge_bench.cli:main"

@@ -225,6 +225,19 @@ def cmd_play(args):
             print(f"  bad arguments: {e}")
 
 
+def cmd_api(args):
+    """HTTP API for front-ends. Requires the optional `api` extra."""
+    try:
+        from .api import serve
+    except ImportError:
+        raise SystemExit(
+            "the HTTP API needs FastAPI and uvicorn:\n"
+            "    pip install -e '.[api]'")
+    print(f"WorldForge API on http://{args.host}:{args.port}  "
+          f"(docs at /docs)", file=sys.stderr)
+    serve(host=args.host, port=args.port, seed=args.seed)
+
+
 def cmd_serve(args):
     """Line-delimited JSON over stdin/stdout, so any process -- including an
     LLM agent loop -- can drive the simulation as a tool.
@@ -334,6 +347,12 @@ def build_parser():
 
     sp = sub.add_parser("serve", help="line-delimited JSON API on stdin/stdout")
     common(sp); sp.set_defaults(func=cmd_serve)
+
+    sp = sub.add_parser("api", help="HTTP API for web front-ends")
+    common(sp)
+    sp.add_argument("--host", default="127.0.0.1")
+    sp.add_argument("--port", type=int, default=8000)
+    sp.set_defaults(func=cmd_api)
     return p
 
 
