@@ -3,3 +3,14 @@ dist/
 .env
 .env.local
 .system_generated/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+runs/
+.venv/
+venv/
+backend/venv/
+paper/
+.DS_Store

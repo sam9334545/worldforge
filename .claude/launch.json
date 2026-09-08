@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "worldforge-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "/Users/ajaymarpally/Developer/worldforge-bench/frontend"],
+      "port": 3000
+    }
+  ]
+}

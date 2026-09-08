@@ -28,12 +28,15 @@ import { LevelCompleteModal } from './components/levels/LevelCompleteModal.tsx';
 import { LevelCampaignModal } from './components/levels/LevelCampaignModal.tsx';
 
 import { audioSystem } from './utils/audioSystem.ts';
+import * as api from './services/api.ts';
 
 import './styles/index.css';
 
 export function App() {
   // Master simulation engine instance ref
   const engineRef = useRef<SimulationEngine | null>(null);
+  // Backend session ID ref for syncing with Python WorldForge API
+  const sessionIdRef = useRef<string | null>(null);
 
   // Campaign Level State (Section 21)
   const [currentLevelId, setCurrentLevelId] = useState<LevelId>(1);
@@ -169,11 +172,27 @@ export function App() {
     };
   };
 
+  // Ensure backend session syncs with current seed and dimensions
+  useEffect(() => {
+    api.createSession(worldState.seed, { width: worldState.width, height: worldState.height })
+      .then(res => {
+        sessionIdRef.current = res.sessionId;
+      })
+      .catch(err => {
+        console.warn('FastAPI backend session sync error:', err);
+      });
+  }, [worldState.seed, worldState.width, worldState.height]);
+
   // Step simulation tick
   const handleStepTick = useCallback(() => {
     if (!engineRef.current) return;
     const result = engineRef.current.step();
     setWorldState(cloneState(result.state));
+
+    // Dispatch asynchronous step tick to Python backend
+    if (sessionIdRef.current) {
+      api.advance(sessionIdRef.current, 1).catch(() => {});
+    }
 
     // Check for recent critical events that haven't been dismissed
     const newEvents = (result.events || []).filter(e => !dismissedEventIds.current.has(e.id));
@@ -308,6 +327,9 @@ export function App() {
         audioSystem.playPlacementSound(selectedTool.type);
         setConstructionPulse({ x: cell.x, y: cell.y, time: performance.now() });
         LevelProgress.saveLevelGridSnapshot(currentLevelId, stepResult.state.grid, stepResult.state.economy.cash);
+        if (sessionIdRef.current) {
+          api.place(sessionIdRef.current, selectedTool.type as any, cell.x, cell.y, 180).catch(() => {});
+        }
       }
     } else if (selectedTool.kind === 'overlay') {
       const stepResult = engineRef.current.step({
@@ -340,6 +362,9 @@ export function App() {
         audioSystem.playOverlaySound();
         setConstructionPulse({ x: cell.x, y: cell.y, time: performance.now() });
         LevelProgress.saveLevelGridSnapshot(currentLevelId, stepResult.state.grid, stepResult.state.economy.cash);
+        if (sessionIdRef.current) {
+          api.reinforce(sessionIdRef.current, cell.x, cell.y, selectedTool.type as any).catch(() => {});
+        }
       }
     }
   };
@@ -363,6 +388,9 @@ export function App() {
       const last = path[path.length - 1];
       setConstructionPulse({ x: last.x, y: last.y, time: performance.now() });
     }
+    if (sessionIdRef.current && path.length > 0) {
+      api.placeCable(sessionIdRef.current, path).catch(() => {});
+    }
   }, [currentLevelId]);
 
   // Machine Orientation / Yaw rotation handler (Level 3+ Wind, Level 4+ Solar)
@@ -380,6 +408,9 @@ export function App() {
     LevelProgress.saveLevelGridSnapshot(currentLevelId, result.state.grid, result.state.economy.cash);
     if (selectedCell && selectedCell.x === cell.x && selectedCell.y === cell.y) {
       setSelectedCell(result.state.grid[cell.y][cell.x]);
+    }
+    if (sessionIdRef.current && cell.machine) {
+      api.setOrientation(sessionIdRef.current, cell.x, cell.y, newAngle).catch(() => {});
     }
   }, [selectedCell, currentLevelId]);
 
@@ -409,6 +440,9 @@ export function App() {
     setWorldState(cloneState(result.state));
     LevelProgress.saveLevelGridSnapshot(currentLevelId, result.state.grid, result.state.economy.cash);
     setSelectedCell(result.state.grid[cell.y][cell.x]);
+    if (sessionIdRef.current) {
+      api.remove(sessionIdRef.current, cell.x, cell.y).catch(() => {});
+    }
   };
 
   // Weather Perturbation Trigger ("Perturb Weather")
@@ -536,7 +570,7 @@ export function App() {
 
         {/* AI Prediction vs Ground Truth Benchmark Card */}
         {showAIComparison && (
-          <AIComparisonCard onClose={() => setShowAIComparison(false)} />
+          <AIComparisonCard onClose={() => setShowAIComparison(false)} seed={worldState.seed} />
         )}
 
         <div style={{ width: '100%', height: '100%', position: 'relative' }}>
