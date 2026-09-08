@@ -14,11 +14,27 @@ import type {
 } from '../sim/types.ts';
 import type { SimulationEvent } from '../sim/contracts/SimulationEvent.ts';
 
-// Configurable API base URL defaulting to http://localhost:8000
-export const API_BASE: string =
-  (import.meta as any).env?.VITE_API_URL ??
-  (import.meta as any).env?.VITE_API_BASE ??
-  'http://localhost:8000';
+// Configurable API base URL supporting Vite environment variables, runtime window injection, and production relative fallback
+const getApiBase = (): string => {
+  const envUrl =
+    (import.meta as any).env?.VITE_API_URL ??
+    (import.meta as any).env?.VITE_API_BASE ??
+    (import.meta as any).env?.VITE_BACKEND_URL ??
+    (typeof window !== 'undefined' ? (window as any).__API_BASE__ || (window as any).__API_URL__ : undefined);
+
+  if (envUrl !== undefined && envUrl !== null && envUrl !== '') {
+    return String(envUrl).replace(/\/$/, '');
+  }
+
+  // In production if not specified, default to relative origin / empty string so reverse proxies / same-origin deployments work out of the box
+  if ((import.meta as any).env?.PROD) {
+    return '';
+  }
+
+  return 'http://localhost:8000';
+};
+
+export const API_BASE: string = getApiBase();
 
 // ---------------------------------------------------------------------------
 // World & Simulation Interfaces
