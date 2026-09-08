@@ -1,0 +1,150 @@
+\documentclass[9pt]{extarticle}
+\usepackage[letterpaper,margin=0.55in]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+\usepackage{titlesec}
+\titleformat{\section}{\bfseries\normalsize}{}{0pt}{}
+\titlespacing*{\section}{0pt}{1.4ex}{0.6ex}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.45ex}
+\pagestyle{empty}
+
+\begin{document}
+
+{\Large\bfseries \textsc{Endogrid}: Measuring the Cost of Reasoning}\\[0.3ex]
+{\small A long-horizon economic planning benchmark where building more can be
+worth less.}
+
+\section{What it is}
+
+An agent gets a procedurally generated terrain, \$25M, and ten simulated years.
+It sites solar, wind and hydro, orients them, wires them to demand zones,
+finances them with cash and debt. Every simulated hour the physics resolves and
+a market clears. The objective is the \textbf{equity value} of the resulting
+business --- not megawatt-hours, not cash.
+
+Price is \textbf{endogenous}: it clears each tick against residual demand served
+by a thermal fleet in merit order. Renewables bid at zero marginal cost, so an
+agent's own output displaces the marginal unit and lowers the price it earns ---
+supply 0\,kW and power clears at \$79/MWh, supply 30\,MW and it clears at
+$-$\$3. Each asset is discounted at its \emph{own} realised capture price, so
+flooding the market marks down what you already own. The naive maximising policy
+defeats itself, and wealth can fall.
+
+\section{Representative research efforts in the area}
+
+\begin{center}\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llllll}
+\toprule
+& World & Objective & Horizon & Adaptation & Cost axis \\
+\midrule
+Sudoku-Extreme [1] & fixed puzzle & correct grid & one shot & recurrent state & no \\
+ARC-AGI-2 [5] & held-out tasks & correct grid & one shot & in-context & no \\
+HRM [3] & puzzle suite & correct grid & one shot & backward pass & params only \\
+TRM [4] & puzzle suite & correct grid & one shot & recursive & params only \\
+Crafter [6] & procedural grid & achievements & episode & policy weights & no \\
+MineDojo [7] & open world & task suite & episode & policy weights & no \\
+\midrule
+\textbf{\textsc{Endogrid}} & procedural grid & \textbf{equity value} & \textbf{10 sim-years} & in-episode state & \textbf{dollars} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+We borrow evaluation \emph{logic} from the BDH line, not the model. BDH is judged
+on correct Sudoku solutions with no chain-of-thought and no backtracking (97.4\%
+top-1) [1]; BDH-CQ adapts to unseen ARC tasks through recurrent state with no
+parameter updates [2]. Our agents get the same constraints: no weight updates
+during the ten-year run, no search, no backtracking --- a built machine is a spent
+\$1.45M. HRM [3] is the contrast that makes ``no fine-tuning mid-run''
+literature-grounded rather than invented, since the optimisation route
+demonstrably exists. Held-out seeds follow ARC-AGI-2's private-set methodology
+[5]: seeds 1--8 development, 9--10 untouched until final scoring.
+
+\section{Results}
+
+\begin{center}\small
+\begin{tabular}{lrrrr}
+\toprule
+Agent (10 seeds, 10 sim-years) & Score & sd & Equity & Return \\
+\midrule
+\texttt{heuristic} --- no search, no backtracking & 43.8 & 11.5 & \$46.5M & $+86\%$ \\
+\texttt{random} & 22.2 & 11.4 & \$28.3M & $+13\%$ \\
+\texttt{donothing} --- holds capital & 16.3 & 0.0 & \$25.0M & $0\%$ \\
+\texttt{lookup} --- fixed terrain$\rightarrow$machine table & 9.1 & 2.5 & \$17.0M & $\mathbf{-32\%}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Memorisation loses money.} \texttt{lookup} scores below doing nothing,
+on every seed. An agent applying a fixed terrain$\rightarrow$machine table does
+not merely underperform --- it destroys a third of its capital, because it sites
+without regard to the resource that actually reaches a cell and orients every
+machine identically regardless of wind. This is the falsifiable form of the
+anti-causal-confusion design [8].
+
+\textbf{The expensive route buys little.} Same map, same twenty-decision budget:
+
+\begin{center}\small
+\begin{tabular}{lrrrr}
+\toprule
+& Score & Cost & Wall-clock & Score/\$ \\
+\midrule
+Sonnet 5 (explicit reasoning) & 43.4 & \$0.80 & 3.8\,min & 54 \\
+\texttt{heuristic} (state only, no search) & 40.8 & \$0.0012 & 0.7\,min & \textbf{32{,}870} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+$94\%$ of the score at $1/670$ of the cost --- the TRM-versus-HRM parameter-count
+argument [4,3] (7M vs 27M vs BDH-CQ's larger recurrent model) restated in
+dollars, on a ten-year horizon with an economic objective rather than one grid.
+
+\section{Limitations and unanswered questions}
+
+\textbf{No BDH model was run.} This is a harness, a protocol and a measurement.
+The high-score/low-cost corner is \emph{empty} --- nothing we ran occupies it.
+That corner is what BDH-style recurrent-state architectures claim, and this
+benchmark makes the claim testable in dollars. It is not evidence they win.
+
+\textbf{The causal-confusion ablation is unrun.} We designed against spurious
+terrain shortcuts and show a lookup table loses money, but have \emph{not} shown
+our reasoning agents are free of some \emph{other} shortcut [8]. The honest test
+permutes the cosmetic identity of terrain types with physics held fixed; an agent
+using a genuine causal chain should be unaffected. Designed, not run --- the first
+thing we would do next.
+
+\textbf{Language-model results are single-seed}, on an engine since corrected for
+a defect those very episodes exposed: an agent reported hydro sites showing zero
+head and was right --- the validator checked flow but never head. They calibrate
+cost; they do not rank models.
+
+\textbf{Memory here is environmental, not a cache.} Soil moisture, lagged
+discharge and a seasonally mean-reverting wind bearing persist whether or not the
+agent attends to them --- closer to BDH's Hebbian fast-weight memory [1] than to a
+key--value cache. Whether an agent must \emph{internalise} that state or may
+re-read it each tick is open.
+
+{\footnotesize\textbf{Reproducing:} deterministic --- seed + config + action log
+give a bit-identical state hash. 41 executable invariants; interface in
+\texttt{docs/API.md}.}
+
+\vspace{0.3ex}
+\hrule
+\vspace{0.5ex}
+{\tiny
+\textbf{References.}
+[1]~Kosowski et al. \emph{The Dragon Hatchling}. arXiv:2509.26507, 2025.
+[2]~Engdahl et al. \emph{BDH-CQ: In-Context Learning with Recurrent Latent Reasoning}. arXiv:2608.09888, 2026.
+[3]~Wang et al. \emph{Hierarchical Reasoning Model}. arXiv:2506.21734, 2025.
+[4]~Jolicoeur-Martineau. \emph{Less is More: Recursive Reasoning with Tiny Networks}. arXiv:2510.04871, 2025.
+[5]~Chollet et al. \emph{ARC-AGI-2}. arXiv:2505.11831, 2025.
+[6]~Hafner. \emph{Benchmarking the Spectrum of Agent Capabilities}. ICLR 2022.
+[7]~Fan et al. \emph{MineDojo}. NeurIPS 2022.
+[8]~Tien et al. \emph{Causal Confusion and Reward Misidentification}. ICLR 2023.
+\par}
+
+\end{document}

@@ -173,6 +173,30 @@ layout, river paths, ridge geometry and demand placement vary with the seed.
 Seeds 1--8 are development; \textbf{seeds 9 and 10 were not run until final
 scoring}. A generalisation gap is reported rather than assumed.
 
+\begin{table}[t]
+\centering\small
+\setlength{\tabcolsep}{4pt}
+\caption{Representative evaluation efforts, and where \textsc{Endogrid} sits.
+\emph{Adaptation} is the route an agent has to a task it has not seen.
+\emph{Cost axis} asks whether the benchmark scores what correctness cost, not
+only whether it was reached.}
+\label{tab:related}
+\begin{tabular}{llllll}
+\toprule
+& World & Objective & Horizon & Adaptation & Cost axis \\
+\midrule
+Sudoku-Extreme \citep{kosowski2025bdh} & fixed puzzle & correct grid & one shot & recurrent state & no \\
+ARC-AGI-2 \citep{chollet2025arcagi2} & held-out tasks & correct grid & one shot & in-context & no \\
+HRM \citep{wang2025hrm} & puzzle suite & correct grid & one shot & backward pass & params only \\
+TRM \citep{jolicoeurmartineau2025trm} & puzzle suite & correct grid & one shot & recursive & params only \\
+Crafter \citep{hafner2022crafter} & procedural grid & achievements & episode & policy weights & no \\
+MineDojo \citep{fan2022minedojo} & open world & task suite & episode & policy weights & no \\
+\midrule
+\textbf{\textsc{Endogrid}} & procedural grid & \textbf{equity value} & \textbf{10 sim-years} & in-episode state & \textbf{dollars} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \paragraph{One world, many tiers.} That a single procedurally generated grid
 world with graded difficulty is a legitimate evaluation design rather than a toy
 was established by Crafter \citep{hafner2022crafter}, and extended to
