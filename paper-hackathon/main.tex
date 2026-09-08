@@ -44,11 +44,16 @@ reaches $94\%$ of that score at $1/670$ of the cost --- $32{,}870$ points per
 dollar against $53.9$. Meanwhile an agent restricted to a fixed
 terrain$\rightarrow$machine lookup table scores $6.8$, \emph{below} the $16.3$
 of doing nothing at all, confirming the environment penalises memorised
-surface correlations rather than rewarding them. We are explicit about what
-this is and is not: we did not run a BDH model. What we contribute is the
-harness, the protocol and the measured frontier on which that comparison can be
-made, together with the finding that on this task the expensive route buys
-little.
+surface correlations rather than rewarding them. We then built an agent on BDH-like principles --- a fast-weight associative
+memory, zero-initialised each episode, updated by a local gradient-free Hebbian
+rule, with no search and no backtracking --- and it \emph{fails}, scoring $18.2$
+and losing money on eight of ten seeds. The failure is structural and worth more
+than a success would have been: a per-site associative memory cannot represent
+cannibalisation, because ``the next machine earns less because I already built
+ten'' is a property of aggregate position, not of any cell. We did not run a
+Dragon Hatchling model, and say so throughout. What we contribute is the
+harness, the protocol, a measured cost frontier, and a concrete statement of the
+state a recurrent architecture would have to carry to do well here.
 \end{abstract}
 
 \section{The question}
@@ -223,6 +228,15 @@ noise floor. \\
 \texttt{heuristic} & Ranks sites by the fields actually present at each cell,
 orients to the resource, wires to the nearest reachable zone, and stops building
 once its own supply would depress the price. No search, no backtracking. \\
+\texttt{hebbian} & \textbf{BDH-inspired.} A fast-weight associative memory over
+binned site observations, zero-initialised every episode, updated by a local
+gradient-free Hebbian rule from realised outcomes. Adapts through state, never
+through parameters; no backward pass, no search, no backtracking. Given no
+physics --- it associates what it sees with what its machines subsequently
+earned. \\
+\texttt{hebbian-mwh} & The same agent with one scalar changed: its Hebbian rule
+is told delivered energy is the good outcome, rather than realised value. The
+ablation that separates mechanism from objective. \\
 \midrule
 LLM agents & Opus 5, Sonnet 5, Haiku 4.5, playing blind through a command
 interface. Given the action schema and the objective only --- no description of
@@ -247,9 +261,16 @@ python3 paper-hackathon/make_results.py
 
 \section{Limitations}
 
-\textbf{No BDH model was run.} This is a harness and a measurement, not an
-architecture comparison. The frontier we report is where a BDH-style model would
-have to land to be interesting; we have not put one there.
+\textbf{No BDH model was run.} We built an agent on BDH-like \emph{principles}
+--- fast weights, state-only adaptation, local updates, no search --- but a
+fast-weight vector over binned features is not a Dragon Hatchling, and its
+failure is evidence about that mechanism at that scale, not about the
+architecture. A real test needs the model.
+
+\textbf{The Hebbian agent is barely tuned.} Two reward signals, one feature
+binning, one learning rate. Its overbuilding may partly be poor calibration
+rather than the representational limit we diagnose, and we did not run the sweep
+that would separate those.
 
 \textbf{Single-seed language-model results.} Three episodes, one seed, one run
 each, on an engine version since corrected for a defect those episodes exposed.

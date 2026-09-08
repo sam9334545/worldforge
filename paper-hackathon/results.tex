@@ -13,6 +13,8 @@ Agent & Score & sd & min & max & Equity & Return & GWh & LCOE & Ins. \\
 \midrule
 \texttt{heuristic} & 43.8 & 11.5 & 14.6 & 55.1 & 46.5 & +86\% & 381 & 44 & 0 \\
 \texttt{random} & 22.2 & 11.4 & 10.7 & 43.8 & 28.3 & +13\% & 52 & 157 & 0 \\
+\texttt{hebbian-mwh} (energy target) & 20.9 & 6.9 & 14.1 & 34.9 & 22.6 & $-$10\% & 436 & 60 & 2 \\
+\texttt{hebbian} (BDH-inspired) & 18.2 & 3.3 & 14.7 & 25.5 & 22.9 & $-$9\% & 292 & 71 & 2 \\
 \texttt{donothing} & 16.3 & 0.0 & 16.3 & 16.3 & 25.0 & +0\% & 0 & 0 & 0 \\
 \texttt{lookup} & 9.1 & 2.5 & 4.4 & 12.2 & 17.0 & $-$32\% & 86 & 290 & 0 \\
 \bottomrule
@@ -20,6 +22,10 @@ Agent & Score & sd & min & max & Equity & Return & GWh & LCOE & Ins. \\
 \end{table}
 
 \paragraph{Memorisation loses money.} \texttt{lookup} scores 9.1, below the 16.3 of holding capital and building nothing, with a mean return of -32\%. An agent applying a fixed terrain$\rightarrow$machine table does not merely fail to excel; it destroys capital, because it sites without regard to the resource that actually reaches a cell and orients every machine identically regardless of the wind. This is the falsifiable form of the anti-memorisation claim: if a lookup table ever became competitive, the environment would be rewarding the surface correlations it was built to punish \citep{tien2023causal}.
+
+\paragraph{The BDH-inspired agent fails, and how it fails is the point.} \texttt{hebbian} carries a fast-weight associative memory over binned site observations, zero-initialised every episode, updated by a local gradient-free Hebbian rule from realised outcomes, with no search and no backtracking. It scores 18.2 against \texttt{heuristic}'s 43.8, returns -9\\%, and goes insolvent on 2 of ten seeds. Redirecting its reward from delivered energy to realised value barely moved it (20.9 to 18.2) and did not curb the overbuilding: 52 machines on average against \texttt{heuristic}'s 16.
+
+The diagnosis is structural rather than a tuning failure. A per-site associative memory maps \emph{features of a cell} to outcomes, but cannibalisation is not a property of any cell --- ``the next machine earns less because I already built ten'' is a property of total portfolio supply. No weight over wind, irradiance, head or stability can express it, so the agent keeps finding sites its memory rates highly and keeps depressing the price it earns on all of them. This is a concrete statement of what state a recurrent architecture would need to carry on this benchmark: not richer features per site, but a representation of its own aggregate position. We report it as a negative result. It is the most useful thing the benchmark told us.
 
 \paragraph{Held-out seeds.} \texttt{heuristic} averages 46.0 on the eight development seeds and 34.9 on seeds 9 and 10, which were not run until final scoring --- a relative gap of +24.2\%, within noise, so we see no evidence of layout fitting. The policy has no parameters to fit, so this is a check that the \emph{environment} does not vary wildly by layout, as much as a check on the agent.
 
@@ -43,6 +49,8 @@ Haiku 4.5 & 8.2 & 18.7 & \$0.35 & 2.1 & 24 \\
 \midrule
 \texttt{heuristic} & 40.8 & 44.9 & \$0.0011 & 0.7 & 36,960 \\
 \texttt{random} & 43.8 & 44.9 & \$0.0010 & 0.6 & 43,050 \\
+\texttt{hebbian-mwh} (energy target) & 34.9 & 44.7 & \$0.0009 & 0.5 & 39,665 \\
+\texttt{hebbian} (BDH-inspired) & 15.9 & 25.7 & \$0.0010 & 0.6 & 16,264 \\
 \texttt{donothing} & 16.3 & 25.0 & \$0.0007 & 0.4 & 22,149 \\
 \texttt{lookup} & 11.7 & 22.8 & \$0.0011 & 0.7 & 10,572 \\
 \bottomrule

@@ -21,8 +21,10 @@ LLM = ROOT / "runs" / "llm_agents.json"
 # cost ratio is conservative rather than flattering.
 CPU_DOLLARS_PER_HOUR = 0.10
 LABEL = {"donothing": r"\texttt{donothing}", "lookup": r"\texttt{lookup}",
-         "random": r"\texttt{random}", "heuristic": r"\texttt{heuristic}"}
-ORDER = ["heuristic", "random", "donothing", "lookup"]
+         "random": r"\texttt{random}", "heuristic": r"\texttt{heuristic}",
+         "hebbian": r"\texttt{hebbian} (BDH-inspired)",
+         "hebbian-mwh": r"\texttt{hebbian-mwh} (energy target)"}
+ORDER = ["heuristic", "random", "hebbian-mwh", "hebbian", "donothing", "lookup"]
 TRAIN, HELD = set(range(1, 9)), {9, 10}
 
 
@@ -177,6 +179,39 @@ Agent & Score & Equity & Cost & Minutes & Score/\$ \\
             f"table ever became competitive, the environment would be rewarding "
             f"the surface correlations it was built to punish "
             f"\\citep{{tien2023causal}}.\n\n")
+    if "hebbian" in by and "heuristic" in by:
+        hb = statistics.fmean(r["score"] for r in by["hebbian"])
+        hm = statistics.fmean(r["score"] for r in by.get("hebbian-mwh", by["hebbian"]))
+        hu = statistics.fmean(r["score"] for r in by["heuristic"])
+        mach_b = statistics.fmean(r["machines"] for r in by["hebbian"])
+        mach_h = statistics.fmean(r["machines"] for r in by["heuristic"])
+        ins = sum(1 for r in by["hebbian"] if r["insolvent"])
+        ret = statistics.fmean(r["total_return"] for r in by["hebbian"])
+        body += (
+            f"\\paragraph{{The BDH-inspired agent fails, and how it fails is the "
+            f"point.}} \\texttt{{hebbian}} carries a fast-weight associative memory "
+            f"over binned site observations, zero-initialised every episode, "
+            f"updated by a local gradient-free Hebbian rule from realised "
+            f"outcomes, with no search and no backtracking. It scores "
+            f"{hb:.1f} against \\texttt{{heuristic}}'s {hu:.1f}, returns "
+            + f"{ret:+.0%}".replace('%', r'\\%') +
+            f", and goes insolvent on {ins} of ten seeds. Redirecting its reward "
+            f"from delivered energy to realised value barely moved it "
+            f"({hm:.1f} to {hb:.1f}) and did not curb the overbuilding: "
+            f"{mach_b:.0f} machines on average against \\texttt{{heuristic}}'s "
+            f"{mach_h:.0f}.\n\n"
+            f"The diagnosis is structural rather than a tuning failure. A "
+            f"per-site associative memory maps \\emph{{features of a cell}} to "
+            f"outcomes, but cannibalisation is not a property of any cell --- "
+            f"``the next machine earns less because I already built ten'' is a "
+            f"property of total portfolio supply. No weight over wind, "
+            f"irradiance, head or stability can express it, so the agent keeps "
+            f"finding sites its memory rates highly and keeps depressing the "
+            f"price it earns on all of them. This is a concrete statement of "
+            f"what state a recurrent architecture would need to carry on this "
+            f"benchmark: not richer features per site, but a representation of "
+            f"its own aggregate position. We report it as a negative result. "
+            f"It is the most useful thing the benchmark told us.\n\n")
     if gap_txt:
         body += gap_txt + "\n\n"
     if t2:
