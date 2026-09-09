@@ -27,7 +27,7 @@ def test_list_seeds():
     assert data["held_out_seeds"] == [101, 102, 103, 104, 105]
 
 
-@pytest.mark.parametrize("agent_type", ["donothing", "random", "lookup", "heuristic"])
+@pytest.mark.parametrize("agent_type", ["donothing", "random", "lookup", "heuristic", "hebbian"])
 def test_run_benchmark_all_agent_types(agent_type):
     payload = {
         "seed": 2,

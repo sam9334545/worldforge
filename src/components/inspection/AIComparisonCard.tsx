@@ -7,7 +7,7 @@ interface AIComparisonCardProps {
 }
 
 export const AIComparisonCard: React.FC<AIComparisonCardProps> = ({ onClose, seed = 42 }) => {
-  const [selectedAgent, setSelectedAgent] = useState<'heuristic' | 'lookup' | 'random' | 'donothing'>('heuristic');
+  const [selectedAgent, setSelectedAgent] = useState<'heuristic' | 'lookup' | 'random' | 'hebbian' | 'donothing'>('heuristic');
   const [evalSeed, setEvalSeed] = useState<number>(seed);
   const [maxSteps, setMaxSteps] = useState<number>(500);
   const [loading, setLoading] = useState<boolean>(false);
@@ -43,11 +43,13 @@ export const AIComparisonCard: React.FC<AIComparisonCardProps> = ({ onClose, see
   };
 
   const heuristicData = evaluatedAgents['heuristic'] ?? (benchmarkResult?.agent_type === 'heuristic' ? benchmarkResult : null);
+  const hebbianData = evaluatedAgents['hebbian'] ?? (benchmarkResult?.agent_type === 'hebbian' ? benchmarkResult : null);
   const lookupData = evaluatedAgents['lookup'] ?? (benchmarkResult?.agent_type === 'lookup' ? benchmarkResult : null);
   const randomData = evaluatedAgents['random'] ?? (benchmarkResult?.agent_type === 'random' ? benchmarkResult : null);
   const doNothingData = evaluatedAgents['donothing'] ?? (benchmarkResult?.agent_type === 'donothing' ? benchmarkResult : null);
 
   const heuristicScore = heuristicData ? heuristicData.scoring_metrics.score : null;
+  const hebbianScore = hebbianData ? hebbianData.scoring_metrics.score : null;
   const lookupScore = lookupData ? lookupData.scoring_metrics.score : null;
   const randomScore = randomData ? randomData.scoring_metrics.score : null;
   const doNothingScore = doNothingData ? doNothingData.scoring_metrics.score : null;
@@ -114,6 +116,7 @@ export const AIComparisonCard: React.FC<AIComparisonCardProps> = ({ onClose, see
             }}
           >
             <option value="heuristic">Heuristic (Reasoning)</option>
+            <option value="hebbian">Hebbian / BDH (Fast-Weights)</option>
             <option value="lookup">Lookup (Memorization)</option>
             <option value="random">Random (Stochastic)</option>
             <option value="donothing">DoNothing (Floor)</option>
@@ -273,7 +276,28 @@ export const AIComparisonCard: React.FC<AIComparisonCardProps> = ({ onClose, see
           </div>
         </div>
 
-        {/* 2. Lookup Table Prior */}
+        {/* 2. Hebbian / BDH Fast-Weights Agent */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+            <span style={{ color: 'var(--text-muted)' }}>BDH Model (Hebbian Fast-Weights)</span>
+            <span style={{ color: '#38bdf8', fontWeight: 700 }} className="tabular-nums">
+              {hebbianScore !== null ? `${hebbianScore.toFixed(1)} pts` : 'Associative Memory'}
+            </span>
+          </div>
+          <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--surface-container-highest)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
+            <div
+              style={{
+                width: hebbianScore !== null ? `${Math.min(100, Math.max(0, hebbianScore))}%` : '0%',
+                height: '100%',
+                backgroundColor: '#38bdf8',
+                borderRadius: 'var(--radius-full)',
+                transition: 'width 0.4s ease-out',
+              }}
+            />
+          </div>
+        </div>
+
+        {/* 3. Lookup Table Prior */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
             <span style={{ color: 'var(--text-muted)' }}>Lookup Table Prior</span>

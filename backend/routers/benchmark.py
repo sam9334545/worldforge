@@ -38,6 +38,9 @@ AGENT_ALIASES: dict[str, str] = {
     "lookupagent": "lookup",
     "heuristic": "heuristic",
     "heuristicagent": "heuristic",
+    "hebbian": "hebbian",
+    "hebbianagent": "hebbian",
+    "bdh": "hebbian",
 }
 
 TRAIN_SEEDS: list[int] = [1, 2, 3, 4, 5]
@@ -216,6 +219,7 @@ def list_benchmark_agents():
         "random": "Random stochastic baseline: makes random exploratory valid placements using the seed.",
         "lookup": "Lookup baseline: memorized terrain-to-machine fixed map ignoring weather/prices/state.",
         "heuristic": "Heuristic reasoning agent: full world-model reasoning across sun, wind, topography, demand, and finance.",
+        "hebbian": "Hebbian fast-weights agent (BDH paradigm): local gradient-free associative memory across site features and realized outcomes.",
     }
     return {
         "available_agents": sorted(AGENTS.keys()),
