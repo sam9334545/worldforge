@@ -6,26 +6,53 @@ interface AIComparisonCardProps {
   seed?: number;
 }
 
+const LEVEL_TO_SEED: Record<number, number> = {
+  1: 1,
+  2: 2,
+  3: 3,
+  4: 4,
+  5: 5,
+  6: 101,
+  7: 102,
+  8: 103,
+  9: 104,
+  10: 105,
+};
+
+const getSeedForLevel = (lvl: number): number => {
+  return LEVEL_TO_SEED[lvl] ?? (lvl <= 5 ? lvl : 100 + (lvl - 5));
+};
+
+const getLevelForSeed = (s: number): number => {
+  for (const [lvlStr, seedVal] of Object.entries(LEVEL_TO_SEED)) {
+    if (seedVal === s) return Number(lvlStr);
+  }
+  if (s >= 1 && s <= 5) return s;
+  if (s >= 101 && s <= 105) return s - 100 + 5;
+  return 1;
+};
+
 export const AIComparisonCard: React.FC<AIComparisonCardProps> = ({ onClose, seed = 42 }) => {
   const [selectedAgent, setSelectedAgent] = useState<'heuristic' | 'lookup' | 'random' | 'hebbian' | 'donothing'>('heuristic');
-  const [evalSeed, setEvalSeed] = useState<number>(seed);
+  const [selectedLevel, setSelectedLevel] = useState<number>(() => getLevelForSeed(seed));
   const [maxSteps, setMaxSteps] = useState<number>(500);
   const [loading, setLoading] = useState<boolean>(false);
   const [benchmarkResult, setBenchmarkResult] = useState<BenchmarkRunResponse | null>(null);
   const [evaluatedAgents, setEvaluatedAgents] = useState<Record<string, BenchmarkRunResponse>>({});
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Sync evalSeed when active seed changes from parent
+  // Sync selectedLevel when seed changes from parent
   useEffect(() => {
-    setEvalSeed(seed);
+    setSelectedLevel(getLevelForSeed(seed));
   }, [seed]);
 
   const handleRunEvaluation = async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
+      const targetSeed = getSeedForLevel(selectedLevel);
       const res = await runBenchmark({
-        seed: evalSeed,
+        seed: targetSeed,
         agent_type: selectedAgent,
         max_steps: maxSteps,
         decision_interval: 168,
@@ -124,13 +151,12 @@ export const AIComparisonCard: React.FC<AIComparisonCardProps> = ({ onClose, see
         </div>
 
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <label style={{ color: 'var(--text-muted)', width: '60px' }}>Seed:</label>
-          <input
-            type="number"
-            value={evalSeed}
-            onChange={(e) => setEvalSeed(parseInt(e.target.value, 10) || 1)}
+          <label style={{ color: 'var(--text-muted)', width: '60px' }}>Level:</label>
+          <select
+            value={selectedLevel}
+            onChange={(e) => setSelectedLevel(parseInt(e.target.value, 10))}
             style={{
-              width: '80px',
+              width: '110px',
               backgroundColor: 'var(--surface-container-highest)',
               color: 'var(--text-primary)',
               border: '1px solid var(--border-subtle)',
@@ -138,10 +164,53 @@ export const AIComparisonCard: React.FC<AIComparisonCardProps> = ({ onClose, see
               padding: '4px 6px',
               fontSize: '11px',
             }}
-          />
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-            (1-5: Train, 101-105: Held-out)
-          </span>
+          >
+            <optgroup label="Training Split (Seeds 1–5)">
+              <option value={1}>Level 1 (Seed 1)</option>
+              <option value={2}>Level 2 (Seed 2)</option>
+              <option value={3}>Level 3 (Seed 3)</option>
+              <option value={4}>Level 4 (Seed 4)</option>
+              <option value={5}>Level 5 (Seed 5)</option>
+            </optgroup>
+            <optgroup label="Held-Out Test Split (Seeds 101–105)">
+              <option value={6}>Level 6 (Seed 101)</option>
+              <option value={7}>Level 7 (Seed 102)</option>
+              <option value={8}>Level 8 (Seed 103)</option>
+              <option value={9}>Level 9 (Seed 104)</option>
+              <option value={10}>Level 10 (Seed 105)</option>
+            </optgroup>
+          </select>
+          {selectedLevel <= 5 ? (
+            <span
+              style={{
+                backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                color: '#38bdf8',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                fontSize: '10px',
+                fontWeight: 600,
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Training (Seed #{getSeedForLevel(selectedLevel)})
+            </span>
+          ) : (
+            <span
+              style={{
+                backgroundColor: 'rgba(168, 85, 247, 0.15)',
+                color: '#c084fc',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                fontSize: '10px',
+                fontWeight: 600,
+                border: '1px solid rgba(168, 85, 247, 0.3)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Held-Out Test (Seed #{getSeedForLevel(selectedLevel)})
+            </span>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -204,9 +273,26 @@ export const AIComparisonCard: React.FC<AIComparisonCardProps> = ({ onClose, see
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-              Evaluation Score ({benchmarkResult.agent_type.toUpperCase()})
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                Score ({benchmarkResult.agent_type.toUpperCase()})
+              </span>
+              <span
+                style={{
+                  fontSize: '9px',
+                  fontWeight: 600,
+                  padding: '1px 5px',
+                  borderRadius: '3px',
+                  backgroundColor:
+                    benchmarkResult.seed_category === 'held_out'
+                      ? 'rgba(168, 85, 247, 0.2)'
+                      : 'rgba(56, 189, 248, 0.2)',
+                  color: benchmarkResult.seed_category === 'held_out' ? '#c084fc' : '#38bdf8',
+                }}
+              >
+                Level {selectedLevel} (Seed #{benchmarkResult.seed})
+              </span>
+            </div>
             <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--primary-bright)' }} className="tabular-nums">
               {benchmarkResult.scoring_metrics.score} / 100
             </span>
