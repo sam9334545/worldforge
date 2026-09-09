@@ -5,18 +5,25 @@ interface MachineInspectorProps {
   machine: MachineState;
   derived: DerivedPhysicalState;
   onRemove: () => void;
-  onClose: () => void;
+  onClose?: () => void;
   onExplainCause?: () => void;
+  onRotate?: () => void;
+  localWindDir?: number;
 }
 
 export const MachineInspector: React.FC<MachineInspectorProps> = ({
   machine,
   derived,
   onRemove,
-  onClose,
-  onExplainCause
+  onExplainCause,
+  onRotate,
+  localWindDir = 270
 }) => {
   const healthPercent = Math.max(0, Math.min(100, machine.health * 100));
+  const yawAngle = machine.orientation ?? 180;
+  // Aerodynamic cosine efficiency for wind turbines
+  const angleDiffRad = ((localWindDir - yawAngle) * Math.PI) / 180;
+  const cosineEff = Math.max(0, Math.cos(angleDiffRad));
 
   return (
     <div style={{
@@ -37,12 +44,6 @@ export const MachineInspector: React.FC<MachineInspectorProps> = ({
             {machine.type} [{machine.x}, {machine.y}]
           </span>
         </div>
-        <button
-          onClick={onClose}
-          style={{ color: 'var(--text-muted)', fontSize: '16px' }}
-        >
-          ✕
-        </button>
       </div>
 
       {/* Operational Status Banner */}
@@ -71,6 +72,56 @@ export const MachineInspector: React.FC<MachineInspectorProps> = ({
       {!machine.isOperating && machine.shutdownReason && (
         <div style={{ fontSize: '10px', color: 'var(--error-bright)', backgroundColor: 'rgba(0,0,0,0.3)', padding: '4px 6px', borderRadius: 'var(--radius-xs)' }}>
           Reason: {machine.shutdownReason}
+        </div>
+      )}
+
+      {/* Orientation & Yaw Control (Level 3+ Wind / Level 4+ Solar) */}
+      {(machine.type === 'WindTurbine' || machine.type === 'LandSolar') && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '6px 8px',
+          borderRadius: 'var(--radius-xs)',
+          backgroundColor: 'var(--surface-container-lowest)',
+          border: '1px solid var(--border-subtle)'
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+              Orientation / Yaw Bearing
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary-bright)' }}>
+                {yawAngle}°
+              </span>
+              {machine.type === 'WindTurbine' && (
+                <span style={{ fontSize: '10px', color: cosineEff > 0.8 ? 'var(--success)' : 'var(--warning-bright)' }}>
+                  (Alignment: {(cosineEff * 100).toFixed(0)}%)
+                </span>
+              )}
+            </div>
+          </div>
+          {onRotate && (
+            <button
+              onClick={onRotate}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 8px',
+                backgroundColor: 'var(--surface-container-high)',
+                color: 'var(--primary-bright)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '11px',
+                fontWeight: 600,
+                border: '1px solid var(--border-subtle)'
+              }}
+              title="Rotate machine heading +45° (Keyboard Shortcut: [R])"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>rotate_right</span>
+              <span>Rotate +45° [R]</span>
+            </button>
+          )}
         </div>
       )}
 

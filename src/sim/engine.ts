@@ -21,18 +21,78 @@ import type { SimulationEvent } from './contracts/SimulationEvent.ts';
 import type { SimulationStepResult, ValidationResult } from './contracts/SimulationStepResult.ts';
 import type { AgentObservation } from './contracts/AgentObservation.ts';
 import type { WorldState } from './contracts/WorldState.ts';
+import { WorldGenerator } from './generator.ts';
 
 export class SimulationEngine {
   private state: WorldState;
   private prng: DeterministicPRNG;
+  public requireGridConnection = false;
 
   constructor(initialState: WorldState) {
     this.state = initialState;
     this.prng = new DeterministicPRNG(initialState.seed + initialState.time.tick);
   }
 
+  public setRequireGridConnection(val: boolean): void {
+    this.requireGridConnection = val;
+  }
+
   public getState(): WorldState {
     return this.state;
+  }
+
+  public getSimulationState(): WorldState {
+    return this.state;
+  }
+
+  public getObservation(): AgentObservation {
+    return this.createObservation();
+  }
+
+  public getAvailableActions(): AgentAction[] {
+    const actions: AgentAction[] = [{ type: 'ADVANCE_TIME', ticks: 1 }];
+    for (let y = 0; y < this.state.height; y++) {
+      for (let x = 0; x < this.state.width; x++) {
+        const cell = this.state.grid[y][x];
+        if (PlacementEngine.canPlace('LandSolar', cell, this.state).valid) {
+          actions.push({ type: 'PLACE', machineType: 'LandSolar', x, y });
+        }
+        if (PlacementEngine.canPlace('WindTurbine', cell, this.state).valid) {
+          actions.push({ type: 'PLACE', machineType: 'WindTurbine', x, y });
+        }
+        if (PlacementEngine.canPlace('HydroTurbine', cell, this.state).valid) {
+          actions.push({ type: 'PLACE', machineType: 'HydroTurbine', x, y });
+        }
+      }
+    }
+    return actions;
+  }
+
+  public executeAction(action: AgentAction): SimulationStepResult {
+    return this.step(action);
+  }
+
+  public stepSimulation(): SimulationStepResult {
+    return this.step();
+  }
+
+  public resetEnvironment(seed?: number): WorldState {
+    const s = seed ?? this.state.seed;
+    this.state = WorldGenerator.generateWorld({ seed: s, isWalkthroughPreset: s === 42 });
+    this.prng = new DeterministicPRNG(s);
+    return this.state;
+  }
+
+  public dismissEvent(eventId: string): void {
+    if (this.state.events) {
+      this.state.events = this.state.events.filter(e => e.id !== eventId);
+    }
+  }
+
+  public clearEvents(): void {
+    if (this.state.events) {
+      this.state.events = [];
+    }
   }
 
   /**
@@ -167,16 +227,24 @@ export class SimulationEngine {
             output = (cell.dynamic.effectiveIrradiance / 1000.0) * area * cell.machine.efficiency * cell.machine.health;
           } else if (cell.machine.type === 'WindTurbine') {
             // E4 & E5: Betz limited turbine output curve
-            const v = cell.dynamic.windSpeed;
-            const cutIn = 3.0;
+            const cellWind = (typeof cell.dynamic.windSpeed === 'number' && !isNaN(cell.dynamic.windSpeed) && cell.dynamic.windSpeed > 0)
+              ? cell.dynamic.windSpeed
+              : (this.state.globalEnv.globalWindSpeed || 10.0);
+            const v = cellWind;
+            const cap = cell.machine.capacity || 500;
+            const eff = cell.machine.efficiency || 0.45;
+            const health = typeof cell.machine.health === 'number' && !isNaN(cell.machine.health) ? cell.machine.health : 1.0;
+            const cutIn = 2.5;
             const rated = 12.0;
             const cutOut = 25.0;
 
             if (v >= cutIn && v <= cutOut) {
               const speedRatio = Math.min(1.0, Math.pow(v / rated, 3));
-              output = cell.machine.capacity * speedRatio * cell.machine.efficiency * cell.machine.health;
+              output = cap * speedRatio * eff * health;
+            } else if (v > cutOut) {
+              output = 0; // Cut-out safety shutdown (RULE-WIND-004)
             } else {
-              output = 0; // Cut-in / cut-out shutdown (RULE-WIND-004)
+              output = 0; // Below cut-in speed
             }
           } else if (cell.machine.type === 'HydroTurbine') {
             // E17: P = rho * g * Q * H * eta
@@ -196,13 +264,37 @@ export class SimulationEngine {
     }
 
     // STEP 16, 17, 18: Transmission, losses, demand delivery, and revenue (Sections 17 & 18)
-    EnergyNetworkEngine.updateGrid(
+    const gridResult = EnergyNetworkEngine.updateGrid(
       grid,
       width,
       height,
       this.state.demandZones,
-      this.state.economy
+      this.state.economy,
+      this.requireGridConnection
     );
+
+    const tick = this.state.time.tick;
+    const totalDelivered = gridResult.totalDeliveredKW;
+    const tickRevenue = gridResult.revenueEarned;
+    const tickMaintenance = gridResult.maintenanceCostPaid;
+    if (tick % 50 === 0) {
+      console.log(`TICK ${tick}: Pwr Delivered: ${totalDelivered}, Revenue: $${tickRevenue}, Maint: $${tickMaintenance}, Net: $${tickRevenue - tickMaintenance}`);
+    }
+
+    this.state.totalDeliveredPower = gridResult.totalDeliveredKW;
+    this.state.totalGeneratedPower = gridResult.totalGeneratedKW;
+
+    // Connect Engine Math to Player Wallet: apply net profit explicitly to player coins
+    this.state.economy.cash = Number(this.state.economy.cash.toFixed(2));
+    this.state.economy.coins = this.state.economy.cash;
+    if (this.state.player) {
+      this.state.player.coins = this.state.economy.cash;
+    } else {
+      this.state.player = { coins: this.state.economy.cash, id: 1 };
+    }
+    if (this.state.players && this.state.players.length > 0) {
+      this.state.players[0].coins = this.state.economy.cash;
+    }
 
     // STEP 19: Machine health degradation update (Section 18)
     for (let y = 0; y < height; y++) {
@@ -271,47 +363,90 @@ export class SimulationEngine {
       const validation = PlacementEngine.canPlace(action.machineType, cell, this.state);
 
       if (!validation.valid) {
+        const errorReason = validation.errorReason || validation.reason || 'Placement violates specification rules.';
         this.state.events.unshift({
           id: `evt-reject-${this.state.time.tick}-${Date.now()}`,
           tick: this.state.time.tick,
           type: 'PLACEMENT_REJECTED',
           severity: 'warning',
-          title: `Placement Rejected: ${action.machineType}`,
-          description: validation.reason || 'Placement violates specification rules.',
+          title: `Cannot Place ${action.machineType}: ${errorReason}`,
+          description: validation.reason || errorReason,
           location: { x: action.x, y: action.y },
         });
-        return validation;
+        return { ...validation, errorReason };
       }
 
-      // Check cash
-      const config = MACHINE_CONFIGS[action.machineType];
-      if (this.state.economy.cash < config.buildCost) {
+      // Check cash / player coins
+      const isConduit = action.machineType === 'Cable' ||
+        (action.machineType as string) === 'Conduit' ||
+        String(action.machineType).toLowerCase() === 'conduit' ||
+        String(action.machineType).toLowerCase() === 'cable';
+
+      const config = MACHINE_CONFIGS[action.machineType] || MACHINE_CONFIGS.Cable;
+      const buildCost = isConduit ? 100 : config.buildCost;
+      const currentCoins = this.state.player?.coins ?? this.state.economy.cash;
+      if (currentCoins < buildCost) {
+        const reason = `Insufficient funds: Requires $${buildCost}, available $${currentCoins.toFixed(0)}.`;
+        const errorReason = 'Insufficient Funds';
+        this.state.events.unshift({
+          id: `evt-reject-${this.state.time.tick}-${Date.now()}`,
+          tick: this.state.time.tick,
+          type: 'PLACEMENT_REJECTED',
+          severity: 'warning',
+          title: `Cannot Place ${action.machineType}: Insufficient Funds`,
+          description: reason,
+          location: { x: action.x, y: action.y },
+        });
         return {
           valid: false,
-          reason: `Insufficient funds: Requires $${config.buildCost}, available $${this.state.economy.cash.toFixed(0)}.`
+          reason,
+          errorReason,
         };
       }
 
       // Deduct build cost
-      this.state.economy.cash -= config.buildCost;
-      this.state.economy.cumulativeCost += config.buildCost;
+      this.state.economy.cash -= buildCost;
+      this.state.economy.coins = this.state.economy.cash;
+      if (this.state.player) {
+        this.state.player.coins = this.state.economy.cash;
+      }
+      if (this.state.players && this.state.players.length > 0) {
+        this.state.players[0].coins = this.state.economy.cash;
+      }
+      this.state.economy.cumulativeCost += buildCost;
 
-      // Place machine
-      cell.machine = {
-        id: `machine-${action.machineType}-${Date.now()}`,
-        type: action.machineType,
-        x: action.x,
-        y: action.y,
-        orientation: action.orientation ?? 180,
-        capacity: config.ratedPower,
-        efficiency: config.efficiency,
-        health: 1.0,
-        ageTicks: 0,
-        lifespanTicks: config.lifespanTicks,
-        maintenanceCostPerTick: config.maintenanceCostPerTick,
-        buildCost: config.buildCost,
-        isOperating: true,
-      };
+      // Place machine or cable in distinct layer
+      if (isConduit) {
+        cell.has_cable = true;
+        cell.hasCable = true;
+        cell.cable = {
+          id: `cable-${action.x}-${action.y}`,
+          x: action.x,
+          y: action.y,
+          connectedTo: [],
+          capacity: 1000,
+          currentThroughput: 0,
+          lossPerCell: 0.015,
+        };
+        // Preserves cell.machine, cell.baseTerrain, cell.overlays
+      } else {
+        cell.machine = {
+          id: `machine-${action.machineType}-${Date.now()}`,
+          type: action.machineType,
+          x: action.x,
+          y: action.y,
+          orientation: action.orientation ?? 180,
+          capacity: config.ratedPower,
+          efficiency: config.efficiency,
+          health: 1.0,
+          ageTicks: 0,
+          lifespanTicks: config.lifespanTicks,
+          maintenanceCostPerTick: config.maintenanceCostPerTick,
+          buildCost: config.buildCost,
+          isOperating: true,
+        };
+        // Preserves cell.has_cable and cell.cable
+      }
 
       return { valid: true };
     }
@@ -319,11 +454,34 @@ export class SimulationEngine {
     if (action.type === 'REINFORCE') {
       const cell = grid[action.y][action.x];
       const validation = PlacementEngine.canReinforce(action.overlayType, cell);
-      if (!validation.valid) return validation;
+      if (!validation.valid) {
+        const errorReason = validation.errorReason || validation.reason || 'Overlay invalid.';
+        this.state.events.unshift({
+          id: `evt-reject-${this.state.time.tick}-${Date.now()}`,
+          tick: this.state.time.tick,
+          type: 'PLACEMENT_REJECTED',
+          severity: 'warning',
+          title: `Cannot Reinforce: ${errorReason}`,
+          description: validation.reason || errorReason,
+          location: { x: action.x, y: action.y },
+        });
+        return { ...validation, errorReason };
+      }
 
       const cost = action.overlayType === 'Gravel' ? 500 : 1000;
       if (this.state.economy.cash < cost) {
-        return { valid: false, reason: `Insufficient funds for reinforcement ($${cost}).` };
+        const reason = `Insufficient funds for reinforcement: Requires $${cost}, available $${this.state.economy.cash.toFixed(0)}.`;
+        const errorReason = 'Insufficient Funds';
+        this.state.events.unshift({
+          id: `evt-reject-${this.state.time.tick}-${Date.now()}`,
+          tick: this.state.time.tick,
+          type: 'PLACEMENT_REJECTED',
+          severity: 'warning',
+          title: `Cannot Reinforce: Insufficient Funds`,
+          description: reason,
+          location: { x: action.x, y: action.y },
+        });
+        return { valid: false, reason, errorReason };
       }
 
       this.state.economy.cash -= cost;
@@ -346,24 +504,46 @@ export class SimulationEngine {
         this.state.economy.cash += cell.machine.buildCost * 0.5;
         cell.machine = null;
         cell.derived.powerGenerated = 0;
+      } else if (cell.cable) {
+        this.state.economy.cash += 50; // Refund 50% cable scrap
+        cell.cable = null;
       }
       return { valid: true };
     }
 
+    if (action.type === 'SET_ORIENTATION') {
+      const cell = grid[action.y][action.x];
+      if (cell.machine) {
+        cell.machine.orientation = (action.orientation % 360 + 360) % 360;
+        return { valid: true };
+      }
+      return { valid: false, reason: 'No machine found on cell to orient.' };
+    }
+
     if (action.type === 'PLACE_CABLE') {
+      let costTotal = 0;
       for (const pt of action.path) {
         if (pt.x >= 0 && pt.x < width && pt.y >= 0 && pt.y < height) {
-          grid[pt.y][pt.x].cable = {
-            id: `cable-${pt.x}-${pt.y}`,
-            x: pt.x,
-            y: pt.y,
-            connectedTo: [],
-            capacity: 1000,
-            currentThroughput: 0,
-            lossPerCell: 0.015,
-          };
+          const cell = grid[pt.y][pt.x];
+          const val = PlacementEngine.canPlace('Cable', cell, this.state);
+          if (val.valid && !cell.cable) {
+            costTotal += 100;
+            cell.cable = {
+              id: `cable-${pt.x}-${pt.y}`,
+              x: pt.x,
+              y: pt.y,
+              connectedTo: [],
+              capacity: 1000,
+              currentThroughput: 0,
+              lossPerCell: 0.015,
+            };
+            cell.has_cable = true;
+            cell.hasCable = true;
+          }
         }
       }
+      this.state.economy.cash -= costTotal;
+      this.state.economy.cumulativeCost += costTotal;
       return { valid: true };
     }
 
@@ -382,7 +562,7 @@ export class SimulationEngine {
       rawMetrics: {
         energyGeneratedKWh: this.state.economy.cumulativeGenerated,
         reliabilityRatio: this.state.economy.reliabilityRatio,
-        economicProfit: this.state.economy.cumulativeRevenue - this.state.economy.cumulativeCost,
+        economicProfit: this.state.economy.rollingDailyProfit ?? (this.state.economy.cumulativeRevenue - this.state.economy.cumulativeCost),
         infrastructureEfficiency: 1.0,
         placementEfficiency: 1.0,
         predictionAccuracy: 1.0,

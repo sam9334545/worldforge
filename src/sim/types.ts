@@ -26,7 +26,8 @@ export type MachineType =
   | 'FloatSolar'
   | 'WindTurbine'
   | 'HydroTurbine'
-  | 'Cable';
+  | 'Cable'
+  | 'Conduit';
 
 export type OverlayType = 'Gravel' | 'Sand' | 'Mud' | 'Stone' | 'Dirt';
 
@@ -162,13 +163,18 @@ export interface DemandZone {
 
 export interface EconomyState {
   cash: number;
+  coins?: number;
   netWorth: number;
   cumulativeRevenue: number;
   cumulativeCost: number;
   cumulativeGenerated: number;  // kWh
   cumulativeDelivered: number;  // kWh
   cumulativeCurtailed: number;  // kWh
+  totalDeliveredPower?: number; // kW this tick
+  totalGeneratedPower?: number; // kW this tick
   reliabilityRatio: number;     // delivered / demanded
+  tickProfitHistory: number[];  // sliding window array storing net operating profit of the last 24 ticks
+  rollingDailyProfit: number;   // sum of tickProfitHistory (representing current daily net operating rate)
 }
 
 // ==========================================
@@ -183,6 +189,8 @@ export interface CellState {
   dynamic: DynamicCellState;
   machine: MachineState | null;
   cable: CableState | null;
+  has_cable?: boolean;
+  hasCable?: boolean;
   derived: DerivedPhysicalState;
 }
 

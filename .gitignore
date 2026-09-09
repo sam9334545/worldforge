@@ -1,6 +1,16 @@
-@"
 node_modules/
 dist/
 .env
 .env.local
-"@ | Out-File -Encoding utf8 .gitignore
+.system_generated/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+runs/
+.venv/
+venv/
+backend/venv/
+paper/
+.DS_Store

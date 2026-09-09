@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { CellState } from '../../sim/types.ts';
 import type { WorldState } from '../../sim/contracts/WorldState.ts';
+import type { XRayLayer } from '../viewport/XRayControls.tsx';
 import { CellInspector } from './CellInspector.tsx';
 import { MachineInspector } from './MachineInspector.tsx';
 
@@ -10,6 +11,8 @@ interface RightContextPanelProps {
   onClose: () => void;
   onRemoveMachine: (cell: CellState) => void;
   onExplainCause?: (type: 'thermal' | 'wind') => void;
+  onRotateMachine?: (cell: CellState) => void;
+  onSelectXRayLayer?: (layer: XRayLayer) => void;
 }
 
 export const RightContextPanel: React.FC<RightContextPanelProps> = ({
@@ -17,9 +20,22 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
   worldState,
   onClose,
   onRemoveMachine,
-  onExplainCause
+  onExplainCause,
+  onRotateMachine,
+  onSelectXRayLayer
 }) => {
-  const [activeTab, setActiveTab] = useState<'cell' | 'machine' | 'economy'>('cell');
+  const [activeTab, setActiveTab] = useState<'cell' | 'machine' | 'economy'>(
+    selectedCell?.machine ? 'machine' : 'cell'
+  );
+
+  // Automatically switch tab when selecting a machine or empty cell
+  useEffect(() => {
+    if (selectedCell?.machine) {
+      setActiveTab('machine');
+    } else {
+      setActiveTab('cell');
+    }
+  }, [selectedCell?.x, selectedCell?.y, selectedCell?.machine?.type]);
 
   if (!selectedCell) return null;
 
@@ -28,17 +44,21 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
   return (
     <aside style={{
       position: 'fixed',
-      top: '56px',
-      right: 0,
-      bottom: 0,
+      top: '64px',
+      right: '16px',
+      bottom: '80px',
       width: '360px',
-      backgroundColor: 'var(--surface-base)',
-      borderLeft: '1px solid var(--border-subtle)',
+      backgroundColor: 'rgba(10, 14, 22, 0.88)',
+      backdropFilter: 'blur(20px)',
+      borderRadius: 'var(--radius-xl)',
+      border: '1px solid var(--border-subtle)',
       display: 'flex',
       flexDirection: 'column',
       zIndex: 35,
-      boxShadow: 'var(--modal-shadow)',
-      userSelect: 'none'
+      boxShadow: '0 16px 48px rgba(0, 0, 0, 0.6)',
+      overflow: 'hidden',
+      userSelect: 'none',
+      animation: 'slideInRight 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
     }}>
       {/* Tab Navigation */}
       <div style={{
@@ -109,7 +129,7 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
       {/* Tab Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
         {activeTab === 'cell' && (
-          <CellInspector cell={selectedCell} onClose={onClose} />
+          <CellInspector cell={selectedCell} onClose={onClose} onSelectXRayLayer={onSelectXRayLayer} />
         )}
 
         {activeTab === 'machine' && selectedCell.machine && (
@@ -119,6 +139,8 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
             onRemove={() => onRemoveMachine(selectedCell)}
             onClose={onClose}
             onExplainCause={onExplainCause ? () => onExplainCause(selectedCell.machine?.type === 'WindTurbine' ? 'wind' : 'thermal') : undefined}
+            onRotate={onRotateMachine ? () => onRotateMachine(selectedCell) : undefined}
+            localWindDir={selectedCell.dynamic.windDirection}
           />
         )}
 
@@ -136,8 +158,11 @@ export const RightContextPanel: React.FC<RightContextPanelProps> = ({
               <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }} className="tabular-nums">
                 ${worldState.economy.cash.toFixed(2)}
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--tertiary)', marginTop: '2px' }} className="tabular-nums">
-                Net Worth: ${worldState.economy.netWorth.toFixed(2)}
+              <div style={{ fontSize: '11px', color: 'var(--tertiary)', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }} className="tabular-nums">
+                <span>Net Worth: ${worldState.economy.netWorth.toFixed(2)}</span>
+                <span style={{ color: (worldState.economy.rollingDailyProfit ?? 0) >= 0 ? '#3fb950' : '#f85149', fontWeight: 600 }}>
+                  24h Rate: {(worldState.economy.rollingDailyProfit ?? 0) >= 0 ? `+$${(worldState.economy.rollingDailyProfit ?? 0).toFixed(2)}` : `-$${Math.abs(worldState.economy.rollingDailyProfit ?? 0).toFixed(2)}`}/day
+                </span>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '12px', fontSize: '11px' }} className="tabular-nums">

@@ -1,0 +1,158 @@
+\documentclass[9pt]{extarticle}
+\usepackage[letterpaper,margin=0.45in]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+\usepackage{titlesec}
+\titleformat{\section}{\bfseries\normalsize}{}{0pt}{}
+\titlespacing*{\section}{0pt}{1.4ex}{0.6ex}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.35ex}
+\pagestyle{empty}
+
+\begin{document}
+
+{\Large\bfseries \textsc{Endogrid}: Measuring the Cost of Reasoning}\\[0.3ex]
+{\small A long-horizon economic planning benchmark where building more can be
+worth less.}
+
+\section{What it is}
+
+An agent gets a procedurally generated terrain, \$25M, and ten simulated years.
+It sites solar, wind and hydro, orients them, wires them to demand zones,
+finances them with cash and debt. Every simulated hour the physics resolves and
+a market clears. The objective is the \textbf{equity value} of the resulting
+business --- not megawatt-hours, not cash.
+
+Price is \textbf{endogenous}: it clears each tick against residual demand served
+by a thermal fleet in merit order. Renewables bid at zero marginal cost, so an
+agent's own output displaces the marginal unit and lowers the price it earns ---
+supply 0\,kW and power clears at \$79/MWh, supply 30\,MW and it clears at
+$-$\$3. Each asset is discounted at its \emph{own} realised capture price, so
+flooding the market marks down what you already own. The naive maximising policy
+defeats itself, and wealth can fall.
+
+\section{Representative research efforts in the area}
+
+\begin{center}\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llllll}
+\toprule
+& World & Objective & Horizon & Adaptation & Cost axis \\
+\midrule
+Sudoku-Extreme [1] & fixed puzzle & correct grid & one shot & recurrent state & no \\
+ARC-AGI-2 [5] & held-out tasks & correct grid & one shot & in-context & no \\
+HRM [3] & puzzle suite & correct grid & one shot & backward pass & params only \\
+TRM [4] & puzzle suite & correct grid & one shot & recursive & params only \\
+Crafter [6] & procedural grid & achievements & episode & policy weights & no \\
+MineDojo [7] & open world & task suite & episode & policy weights & no \\
+\midrule
+\textbf{\textsc{Endogrid}} & procedural grid & \textbf{equity value} & \textbf{10 sim-years} & in-episode state & \textbf{dollars} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+We borrow evaluation \emph{logic} from the BDH line. BDH is judged on correct
+Sudoku solutions with no chain-of-thought and no backtracking (97.4\% top-1) [1];
+BDH-CQ adapts to unseen ARC tasks through recurrent state, no parameter updates
+[2]. Our agents get the same constraints: no weight updates during the ten-year
+run, no search, no backtracking --- a built machine is a spent \$1.45M. HRM [3]
+is the contrast making ``no fine-tuning mid-run'' literature-grounded rather than
+invented. Held-out seeds follow ARC-AGI-2's private-set methodology [5]: seeds
+1--8 development, 9--10 untouched until final scoring. Memory here is
+environmental --- soil moisture, lagged discharge, a mean-reverting wind bearing
+--- closer to BDH's Hebbian fast weights than to a key--value cache.
+
+\section{Results}
+
+\begin{center}\small
+\begin{tabular}{lrrrr}
+\toprule
+Agent (10 seeds, 10 sim-years) & Score & sd & Equity & Return \\
+\midrule
+\texttt{heuristic} --- no search, no backtracking & 43.8 & 11.5 & \$46.5M & $+86\%$ \\
+\texttt{random} & 22.2 & 11.4 & \$28.3M & $+13\%$ \\
+\texttt{hebbian-mwh} --- BDH-inspired, energy target & 20.9 & 6.9 & \$22.6M & $-10\%$ \\
+\texttt{hebbian} --- BDH-inspired, value target & 18.2 & 3.3 & \$22.9M & $-9\%$ \\
+\texttt{donothing} --- holds capital & 16.3 & 0.0 & \$25.0M & $0\%$ \\
+\texttt{lookup} --- fixed terrain$\rightarrow$machine table & 9.1 & 2.5 & \$17.0M & $\mathbf{-32\%}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Memorisation loses money.} \texttt{lookup} scores below doing nothing,
+on every seed. An agent applying a fixed terrain$\rightarrow$machine table does
+not merely underperform --- it destroys a third of its capital, because it sites
+without regard to the resource that actually reaches a cell and orients every
+machine identically regardless of wind. This is the falsifiable form of the
+anti-causal-confusion design [8].
+
+\textbf{The expensive route buys little.} Same map, same twenty-decision budget:
+
+\begin{center}\small
+\begin{tabular}{lrrrr}
+\toprule
+& Score & Cost & Wall-clock & Score/\$ \\
+\midrule
+Sonnet 5 (explicit reasoning) & 43.4 & \$0.80 & 3.8\,min & 54 \\
+\texttt{heuristic} (state only, no search) & 40.8 & \$0.0012 & 0.7\,min & \textbf{32{,}870} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+$94\%$ of the score at $1/670$ of the cost --- the TRM-versus-HRM parameter-count
+argument [4,3] (7M vs 27M vs BDH-CQ's larger recurrent model) restated in
+dollars, on a ten-year horizon with an economic objective rather than one grid.
+
+\section{Limitations and unanswered questions}
+
+\textbf{The BDH-inspired agent fails, and how it fails is the point.}
+\texttt{hebbian} carries a fast-weight associative memory over binned site
+observations, zero-initialised each episode, updated by a local gradient-free
+Hebbian rule --- state route, no backward pass, no search, no backtracking. It
+scores 18.2 against \texttt{heuristic}'s 43.8 and goes insolvent on 2 of 10
+seeds. Changing its reward from energy to value barely moved it and did not curb
+overbuilding (52 machines against 15). The diagnosis is structural: a per-site
+associative memory maps \emph{features of a cell} to outcomes, but
+cannibalisation is a property of \emph{aggregate position} --- ``the next machine
+earns less because I already built ten'' is not expressible as a weight over
+wind, irradiance or head. That is a concrete statement of what state a recurrent
+architecture must carry here: not richer per-site features, but a representation
+of its own portfolio.
+
+\textbf{No Dragon Hatchling model was run.} A fast-weight vector over binned
+features is BDH-\emph{inspired}, not BDH. Its failure is evidence about that
+mechanism at that scale, not about the architecture. The high-score/low-cost
+corner remains empty.
+
+\textbf{The causal-confusion ablation is unrun.} We show a lookup table loses
+money, but have not shown our other agents are free of some \emph{other} shortcut
+[8]. The test permutes terrain identity with physics fixed; a causal agent should
+be unaffected. Designed, not run.
+
+\textbf{Language-model results are single-seed}, on an engine since corrected for
+a defect those episodes exposed --- an agent reported hydro sites with zero head
+and was right. They calibrate cost; they do not rank models.
+
+{\footnotesize\textbf{Reproducing:} deterministic --- seed + config + action log
+give a bit-identical state hash. 41 executable invariants; interface in
+\texttt{docs/API.md}.}
+
+\vspace{0.3ex}
+\hrule
+\vspace{0.5ex}
+{\tiny
+\textbf{References.}
+[1]~Kosowski et al. \emph{The Dragon Hatchling}. arXiv:2509.26507, 2025.
+[2]~Engdahl et al. \emph{BDH-CQ: In-Context Learning with Recurrent Latent Reasoning}. arXiv:2608.09888, 2026.
+[3]~Wang et al. \emph{Hierarchical Reasoning Model}. arXiv:2506.21734, 2025.
+[4]~Jolicoeur-Martineau. \emph{Less is More: Recursive Reasoning with Tiny Networks}. arXiv:2510.04871, 2025.
+[5]~Chollet et al. \emph{ARC-AGI-2}. arXiv:2505.11831, 2025.
+[6]~Hafner. \emph{Benchmarking the Spectrum of Agent Capabilities}. ICLR 2022.
+[7]~Fan et al. \emph{MineDojo}. NeurIPS 2022.
+[8]~Tien et al. \emph{Causal Confusion and Reward Misidentification}. ICLR 2023.
+\par}
+
+\end{document}

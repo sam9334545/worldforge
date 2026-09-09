@@ -20,6 +20,8 @@ interface BottomControlDockProps {
   setSpeed: (speed: number) => void;
   onPerturbWeather: () => void;
   onReset: () => void;
+  unlockedMachines?: MachineType[];
+  unlockedOverlays?: OverlayType[];
 }
 
 export const BottomControlDock: React.FC<BottomControlDockProps> = ({
@@ -33,7 +35,9 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
   speed,
   setSpeed,
   onPerturbWeather,
-  onReset
+  onReset,
+  unlockedMachines,
+  unlockedOverlays
 }) => {
   return (
     <nav aria-label="Simulation Controls" style={{
@@ -110,134 +114,163 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
         /* Build Palette */
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {/* Solar */}
-          <button
-            onClick={() => setSelectedTool({ kind: 'machine', type: 'LandSolar' })}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '5px 10px',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '11px',
-              fontWeight: 600,
-              backgroundColor: selectedTool?.kind === 'machine' && selectedTool.type === 'LandSolar' ? 'var(--surface-container-highest)' : 'var(--surface-container)',
-              color: selectedTool?.kind === 'machine' && selectedTool.type === 'LandSolar' ? 'var(--warning-bright)' : 'var(--text-primary)',
-              border: selectedTool?.kind === 'machine' && selectedTool.type === 'LandSolar' ? '1px solid var(--border-active)' : '1px solid transparent'
-            }}
-            title="Land Solar ($5,000) • Requires stability >= 0.70"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>solar_power</span>
-            <span>Solar</span>
-          </button>
+          {(!unlockedMachines || unlockedMachines.includes('LandSolar')) && (
+            <button
+              onClick={() => setSelectedTool({ kind: 'machine', type: 'LandSolar' })}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '5px 10px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '11px',
+                fontWeight: 600,
+                backgroundColor: selectedTool?.kind === 'machine' && selectedTool.type === 'LandSolar' ? 'var(--surface-container-highest)' : 'var(--surface-container)',
+                color: selectedTool?.kind === 'machine' && selectedTool.type === 'LandSolar' ? 'var(--warning-bright)' : 'var(--text-primary)',
+                border: selectedTool?.kind === 'machine' && selectedTool.type === 'LandSolar' ? '1px solid var(--border-active)' : '1px solid transparent'
+              }}
+              title="Land Solar ($5,000) • Requires stability >= 0.70"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>solar_power</span>
+              <span>Solar</span>
+            </button>
+          )}
 
           {/* Floating Solar */}
-          <button
-            onClick={() => setSelectedTool({ kind: 'machine', type: 'FloatSolar' })}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '5px 10px',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '11px',
-              fontWeight: 600,
-              backgroundColor: selectedTool?.kind === 'machine' && selectedTool.type === 'FloatSolar' ? 'var(--surface-container-highest)' : 'var(--surface-container)',
-              color: selectedTool?.kind === 'machine' && selectedTool.type === 'FloatSolar' ? 'var(--cyan-bright)' : 'var(--text-primary)',
-              border: selectedTool?.kind === 'machine' && selectedTool.type === 'FloatSolar' ? '1px solid var(--border-active)' : '1px solid transparent'
-            }}
-            title="Floating Solar ($7,500) • Requires water velocity <= 1.5 m/s"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>water</span>
-            <span>Float Solar</span>
-          </button>
+          {(!unlockedMachines || unlockedMachines.includes('FloatSolar')) && (
+            <button
+              onClick={() => setSelectedTool({ kind: 'machine', type: 'FloatSolar' })}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '5px 10px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '11px',
+                fontWeight: 600,
+                backgroundColor: selectedTool?.kind === 'machine' && selectedTool.type === 'FloatSolar' ? 'var(--surface-container-highest)' : 'var(--surface-container)',
+                color: selectedTool?.kind === 'machine' && selectedTool.type === 'FloatSolar' ? 'var(--cyan-bright)' : 'var(--text-primary)',
+                border: selectedTool?.kind === 'machine' && selectedTool.type === 'FloatSolar' ? '1px solid var(--border-active)' : '1px solid transparent'
+              }}
+              title="Floating Solar ($7,500) • Requires water velocity <= 1.5 m/s"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>water</span>
+              <span>Float Solar</span>
+            </button>
+          )}
 
           {/* Wind Turbine */}
-          <button
-            onClick={() => setSelectedTool({ kind: 'machine', type: 'WindTurbine' })}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '5px 10px',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '11px',
-              fontWeight: 600,
-              backgroundColor: selectedTool?.kind === 'machine' && selectedTool.type === 'WindTurbine' ? 'var(--surface-container-highest)' : 'var(--surface-container)',
-              color: selectedTool?.kind === 'machine' && selectedTool.type === 'WindTurbine' ? 'var(--primary-bright)' : 'var(--text-primary)',
-              border: selectedTool?.kind === 'machine' && selectedTool.type === 'WindTurbine' ? '1px solid var(--border-active)' : '1px solid transparent'
-            }}
-            title="Wind Turbine ($12,000) • Requires stability >= 0.70"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>mode_fan</span>
-            <span>Turbine</span>
-          </button>
+          {(!unlockedMachines || unlockedMachines.includes('WindTurbine')) && (
+            <button
+              onClick={() => setSelectedTool({ kind: 'machine', type: 'WindTurbine' })}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '5px 10px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '11px',
+                fontWeight: 600,
+                backgroundColor: selectedTool?.kind === 'machine' && selectedTool.type === 'WindTurbine' ? 'var(--surface-container-highest)' : 'var(--surface-container)',
+                color: selectedTool?.kind === 'machine' && selectedTool.type === 'WindTurbine' ? 'var(--primary-bright)' : 'var(--text-primary)',
+                border: selectedTool?.kind === 'machine' && selectedTool.type === 'WindTurbine' ? '1px solid var(--border-active)' : '1px solid transparent'
+              }}
+              title="Wind Turbine ($12,000) • Requires stability >= 0.70 & wake clearance >= 2.0"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>mode_fan</span>
+              <span>Turbine</span>
+            </button>
+          )}
 
           {/* Hydro Station */}
-          <button
-            onClick={() => setSelectedTool({ kind: 'machine', type: 'HydroTurbine' })}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '5px 10px',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '11px',
-              fontWeight: 600,
-              backgroundColor: selectedTool?.kind === 'machine' && selectedTool.type === 'HydroTurbine' ? 'var(--surface-container-highest)' : 'var(--surface-container)',
-              color: selectedTool?.kind === 'machine' && selectedTool.type === 'HydroTurbine' ? 'var(--tertiary)' : 'var(--text-primary)',
-              border: selectedTool?.kind === 'machine' && selectedTool.type === 'HydroTurbine' ? '1px solid var(--border-active)' : '1px solid transparent'
-            }}
-            title="Hydro Turbine ($20,000) • Requires flowRate Q >= 2.0 m³/s"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>waves</span>
-            <span>Hydro</span>
-          </button>
+          {(!unlockedMachines || unlockedMachines.includes('HydroTurbine')) && (
+            <button
+              onClick={() => setSelectedTool({ kind: 'machine', type: 'HydroTurbine' })}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '5px 10px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '11px',
+                fontWeight: 600,
+                backgroundColor: selectedTool?.kind === 'machine' && selectedTool.type === 'HydroTurbine' ? 'var(--surface-container-highest)' : 'var(--surface-container)',
+                color: selectedTool?.kind === 'machine' && selectedTool.type === 'HydroTurbine' ? 'var(--tertiary)' : 'var(--text-primary)',
+                border: selectedTool?.kind === 'machine' && selectedTool.type === 'HydroTurbine' ? '1px solid var(--border-active)' : '1px solid transparent'
+              }}
+              title="Hydro Turbine ($20,000) • Requires flowRate Q >= 5.0 m³/s"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>waves</span>
+              <span>Hydro</span>
+            </button>
+          )}
 
           {/* Cable Conduit */}
-          <button
-            onClick={() => setSelectedTool({ kind: 'machine', type: 'Cable' })}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '5px 10px',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '11px',
-              fontWeight: 600,
-              backgroundColor: selectedTool?.kind === 'machine' && selectedTool.type === 'Cable' ? 'var(--surface-container-highest)' : 'var(--surface-container)',
-              color: selectedTool?.kind === 'machine' && selectedTool.type === 'Cable' ? 'var(--text-primary)' : 'var(--text-muted)',
-              border: selectedTool?.kind === 'machine' && selectedTool.type === 'Cable' ? '1px solid var(--border-active)' : '1px solid transparent'
-            }}
-            title="Cable Conduit ($200) • Connects generators to Demand Zones"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>cable</span>
-            <span>Conduit</span>
-          </button>
+          {(!unlockedMachines || unlockedMachines.includes('Cable')) && (
+            <button
+              onClick={() => setSelectedTool({ kind: 'machine', type: 'Cable' })}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '5px 10px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '11px',
+                fontWeight: 600,
+                backgroundColor: selectedTool?.kind === 'machine' && selectedTool.type === 'Cable' ? 'var(--surface-container-highest)' : 'var(--surface-container)',
+                color: selectedTool?.kind === 'machine' && selectedTool.type === 'Cable' ? 'var(--cyan-bright)' : 'var(--text-muted)',
+                border: selectedTool?.kind === 'machine' && selectedTool.type === 'Cable' ? '1px solid var(--border-active)' : '1px solid transparent'
+              }}
+              title="Cable Conduit ($100/cell) • Drag or click path to connect generators to Demand Zones"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>cable</span>
+              <span>Conduit</span>
+            </button>
+          )}
 
           {/* Soil Stabilizer (Gravel Overlay) */}
-          <button
-            onClick={() => setSelectedTool({ kind: 'overlay', type: 'Gravel' })}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '5px 10px',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '11px',
-              fontWeight: 600,
-              backgroundColor: selectedTool?.kind === 'overlay' && selectedTool.type === 'Gravel' ? 'var(--surface-container-highest)' : 'var(--surface-container)',
-              color: selectedTool?.kind === 'overlay' && selectedTool.type === 'Gravel' ? '#8bfb91' : 'var(--text-muted)',
-              border: selectedTool?.kind === 'overlay' && selectedTool.type === 'Gravel' ? '1px solid var(--border-active)' : '1px solid transparent'
-            }}
-            title="Gravel Overlay ($500) • Increases effective stability by +0.25 (RULE-OVERLAY-001)"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>architecture</span>
-            <span>Stabilizer</span>
-          </button>
+          {(!unlockedOverlays || unlockedOverlays.includes('Gravel')) && (
+            <button
+              onClick={() => setSelectedTool({ kind: 'overlay', type: 'Gravel' })}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '5px 10px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '11px',
+                fontWeight: 600,
+                backgroundColor: selectedTool?.kind === 'overlay' && selectedTool.type === 'Gravel' ? 'var(--surface-container-highest)' : 'var(--surface-container)',
+                color: selectedTool?.kind === 'overlay' && selectedTool.type === 'Gravel' ? '#8bfb91' : 'var(--text-muted)',
+                border: selectedTool?.kind === 'overlay' && selectedTool.type === 'Gravel' ? '1px solid var(--border-active)' : '1px solid transparent'
+              }}
+              title="Gravel Overlay ($500) • Increases effective stability by +0.25 (RULE-OVERLAY-001)"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>architecture</span>
+              <span>Stabilizer</span>
+            </button>
+          )}
         </div>
       ) : (
-        /* Playback Controls */
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        /* Playback Controls & Mode Guidance */
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {mode === 'inspect' && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 10px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'rgba(56, 189, 248, 0.12)',
+              border: '1px solid rgba(56, 189, 248, 0.3)',
+              color: 'var(--primary-bright)',
+              fontSize: '11px',
+              fontWeight: 600
+            }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>search</span>
+              <span>Inspect Mode: Click any cell or machine to analyze</span>
+            </div>
+          )}
           {/* Play / Pause */}
           <button
             onClick={onTogglePlay}

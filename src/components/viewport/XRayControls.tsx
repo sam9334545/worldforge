@@ -6,22 +6,27 @@ export type XRayLayer =
   | 'wind'
   | 'solar'
   | 'hydro'
+  | 'water'
+  | 'cloud'
   | 'snow'
   | 'network'
+  | 'energy'
   | 'ai';
 
 interface XRayControlsProps {
   activeLayer: XRayLayer;
   onSelectLayer: (layer: XRayLayer) => void;
+  unlockedLayers?: XRayLayer[];
 }
 
 export const XRayControls: React.FC<XRayControlsProps> = ({
   activeLayer,
-  onSelectLayer
+  onSelectLayer,
+  unlockedLayers
 }) => {
-  const [isOpen, setIsOpen] = useState<boolean>(true);
+  const [isOpen, setIsOpen] = useState<boolean>(false);
 
-  const layers: Array<{ id: XRayLayer; label: string; icon: string; category: string; color: string }> = [
+  const rawLayers: Array<{ id: XRayLayer; label: string; icon: string; category: string; color: string }> = [
     { id: 'none', label: 'Default View', icon: 'view_in_ar', category: 'General', color: '#afc6ff' },
     { id: 'wind', label: 'Wind Vector Field', icon: 'air', category: 'Environment', color: '#79c0ff' },
     { id: 'solar', label: 'Solar Exposure', icon: 'wb_sunny', category: 'Environment', color: '#ffea79' },
@@ -32,18 +37,28 @@ export const XRayControls: React.FC<XRayControlsProps> = ({
     { id: 'ai', label: 'AI Prediction Mesh', icon: 'grain', category: 'Analysis', color: '#aac7ff' },
   ];
 
+  const layers = rawLayers.filter(l => {
+    if (!unlockedLayers) return true;
+    if (l.id === 'none') return true;
+    return unlockedLayers.includes(l.id) ||
+      (l.id === 'hydro' && (unlockedLayers.includes('water') || unlockedLayers.includes('hydro'))) ||
+      (l.id === 'network' && (unlockedLayers.includes('energy') || unlockedLayers.includes('network')));
+  });
+
+  const currentItem = layers.find(l => l.id === activeLayer) || layers[0];
+
   return (
     <div style={{
       position: 'absolute',
-      top: '72px',
-      left: '16px',
+      top: '56px',
+      left: '312px',
       display: 'flex',
       flexDirection: 'column',
       gap: '4px',
       zIndex: 25,
       userSelect: 'none'
     }}>
-      {/* Toggle Button */}
+      {/* Compact Toggle Button Pill */}
       <button
         onClick={() => setIsOpen(o => !o)}
         style={{
@@ -51,20 +66,21 @@ export const XRayControls: React.FC<XRayControlsProps> = ({
           alignItems: 'center',
           gap: '6px',
           padding: '6px 12px',
-          borderRadius: 'var(--radius-md)',
-          backgroundColor: 'var(--glass-bg)',
-          backdropFilter: 'blur(12px)',
+          borderRadius: 'var(--radius-full)',
+          backgroundColor: 'rgba(10, 14, 22, 0.85)',
+          backdropFilter: 'blur(16px)',
           border: '1px solid var(--border-subtle)',
-          boxShadow: 'var(--glass-shadow)',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
           color: 'var(--text-primary)',
           fontSize: '11px',
           fontWeight: 600
         }}
+        title="Toggle Multi-Spectral World X-Ray Layers"
       >
-        <span className="material-symbols-outlined" style={{ fontSize: '16px', color: 'var(--primary-bright)' }}>
-          layers
+        <span className="material-symbols-outlined" style={{ fontSize: '16px', color: currentItem.color }}>
+          {currentItem.icon}
         </span>
-        <span>World X-Ray</span>
+        <span>{currentItem.id === 'none' ? 'X-Ray Layers' : currentItem.label}</span>
         <span className="material-symbols-outlined" style={{ fontSize: '16px', color: 'var(--text-muted)' }}>
           {isOpen ? 'expand_less' : 'expand_more'}
         </span>
@@ -76,13 +92,13 @@ export const XRayControls: React.FC<XRayControlsProps> = ({
           display: 'flex',
           flexDirection: 'column',
           gap: '2px',
-          backgroundColor: 'var(--glass-bg)',
-          backdropFilter: 'blur(16px)',
+          backgroundColor: 'rgba(10, 14, 22, 0.92)',
+          backdropFilter: 'blur(20px)',
           padding: '6px',
           borderRadius: 'var(--radius-lg)',
           border: '1px solid var(--border-subtle)',
-          boxShadow: 'var(--modal-shadow)',
-          minWidth: '180px'
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+          minWidth: '185px'
         }}>
           {layers.map(layer => {
             const isActive = activeLayer === layer.id;
@@ -90,7 +106,10 @@ export const XRayControls: React.FC<XRayControlsProps> = ({
             return (
               <button
                 key={layer.id}
-                onClick={() => onSelectLayer(layer.id)}
+                onClick={() => {
+                  onSelectLayer(layer.id);
+                  setIsOpen(false);
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

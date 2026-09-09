@@ -196,6 +196,15 @@ export const MACHINE_CONFIGS: Record<MachineType, MachineConfig> = {
     buildCost: 200,
     maintenanceCostPerTick: 0.1,
     lifespanTicks: 24 * 360 * 30,
+  },
+  Conduit: {
+    type: 'Conduit',
+    ratedPower: 1000,
+    efficiency: 0.98,
+    minStability: 0.30,
+    buildCost: 100,
+    maintenanceCostPerTick: 0.1,
+    lifespanTicks: 24 * 360 * 30,
   }
 };
 
